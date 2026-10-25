@@ -1,0 +1,28 @@
+# Local virtualenv (system pip cannot write to the shared interpreter prefix)
+.venv/
+venv/
+
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+
+# Spike scratch data — raw transaction caches are large and re-fetchable
+spikes/cache/
+spikes/cache2/
+
+# Local environment overrides
+.env
+.env.local
+
+# Editor swap files (nano/vim buffers can contain the API key)
+*.swp
+*.swo
+*~
+
+# Local Postgres cluster (workspace-persistent replacement for /tmp/pgdata)
+.pgdata/
+
+# Collected raw data (large + re-fetchable by design) and local run logs
+data/
+data-*.log
+data-*.pid

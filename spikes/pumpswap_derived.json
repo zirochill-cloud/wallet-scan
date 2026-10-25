@@ -1,0 +1,114 @@
+[
+  {
+    "sig": "4J63TvkQ94C3Xfwsa5vTnPzBqjaz8TzsMFggJrg2owAvKsa89eaNrsi7Y95fdWHvevQFYToYKf1UhTRrv7TaheUb",
+    "blockTime": 1792181064,
+    "tok": 75849.3428170085,
+    "sol": 0.04567973899999345,
+    "price_sol": 6.022430426351723e-07,
+    "wsol_net": 0.04613562599996285
+  },
+  {
+    "sig": "3Ux3RGQBeovGKpfNWtRszDFHqfGuSV3Ef68EUuknoyZzA8F9CawMubrZjxmadAnmwdE4FQH59FQyj2QgyMJwRAPE",
+    "blockTime": 1792181063,
+    "tok": 1676263.9727270007,
+    "sol": 0.9856630430000024,
+    "price_sol": 5.880118281111141e-07,
+    "wsol_net": 0.9954999999999579
+  },
+  {
+    "sig": "5KUiC8ghe7vYMyuhCBoZYGNrvNRFr1csVJ6Wkhv3CejZR11eJZMnsrKDmwqNuyRv9VybWqBKy7nnc1sWj4uyvDFh",
+    "blockTime": 1792181062,
+    "tok": 16829.31645900011,
+    "sol": 0.00989755399999126,
+    "price_sol": 5.88113844320645e-07,
+    "wsol_net": 0.009899999999991138
+  },
+  {
+    "sig": "3k6jzuHHquqe7jCeg6m9bNPJNEEQS46DhgGbimSfiQyHdmeuCKjzvYu6D3q69nnHHQHbjRnCFx7WHUWExxLhCAQy",
+    "blockTime": 1792181060,
+    "tok": 515409.9631560147,
+    "sol": 0.29929283300000975,
+    "price_sol": 5.806888775827055e-07,
+    "wsol_net": -0.2962939060007199
+  },
+  {
+    "sig": "5QQaAv6QhFVZhzCVQdXwuwjsce1y9tMRUb5pAhgcS9NP8bZ27yNESttU6mNkzQJSjJMQzfA7oCtLMtoovk13KhKj",
+    "blockTime": 1792181060,
+    "tok": 816603.3099760115,
+    "sol": 0.47528913800000794,
+    "price_sol": 5.820318534025658e-07,
+    "wsol_net": 0.4800325439998794
+  },
+  {
+    "sig": "3rFBbVL9CgJiujwGKNMYyL89EfLyabXkD9SRixZcTMejfF8fB4RZXsczzexMvgNuV3P5JE7i6Fse8UfnbfYPVmvo",
+    "blockTime": 1792181059,
+    "tok": 16919.93098500371,
+    "sol": 0.00989755399999126,
+    "price_sol": 5.849642063412405e-07,
+    "wsol_net": 0.00989999999999136
+  },
+  {
+    "sig": "Miq2hvzPq82VJf56kYi1RwpfCM3z8QqDahvToshoD9TRmvjHBYtTaU7sQnD4bpxtbBd8EM5JuVCyQyWY4aaag36",
+    "blockTime": 1792181059,
+    "tok": 156401.116986,
+    "sol": 0.09194784800001798,
+    "price_sol": 5.878976427530792e-07,
+    "wsol_net": -2.4868995751603507e-14
+  },
+  {
+    "sig": "2UM5uhCyMzn3MKgArBT5woPfnuV49fUB38WfYkXAqrRwV8m7GrgbMEmRS8e7Ykp5p534qhgsCrMH915pv3D6Gw6j",
+    "blockTime": 1792181058,
+    "tok": 16329.309128016233,
+    "sol": 0.009588331000003336,
+    "price_sol": 5.871853441461657e-07,
+    "wsol_net": 0.009590700000003505
+  },
+  {
+    "sig": "4gEHSqUhbRJbkvLB3JYSsKJ7ZCMKCjj4bMRxB6Bz673jLf8B5McrGfyqVCyHwjnzZtyHgzfM6KJMKvY5L2Mfy1jg",
+    "blockTime": 1792181058,
+    "tok": 1701804.3786900043,
+    "sol": 0.9897554350000064,
+    "price_sol": 5.815917783463979e-07,
+    "wsol_net": 0.9900000000000064
+  },
+  {
+    "sig": "3ERrcPSYRoa7K82NpqVz9ZBBbe6iRm6FiDKmui1GvE1hhBnUwxzgYRpCY63fGzsemMrqmL8Uxp4TkPAPCUmUeJ7M",
+    "blockTime": 1792181058,
+    "tok": 170174.7648050189,
+    "sol": 0.09679881200000295,
+    "price_sol": 5.688200134192171e-07,
+    "wsol_net": -0.09582888300042319
+  },
+  {
+    "sig": "DwDW7HTJPZfHFHFtUkkcmuKYg6cS1t9cJi5WXQ7kkGFGncPs2VRyrfkL5cqUt2NYMFdH6bzCpeXbdHbeL8oyV4n",
+    "blockTime": 1792181055,
+    "tok": 2737719.5629180074,
+    "sol": 1.5756408639999933,
+    "price_sol": 5.755304105437999e-07,
+    "wsol_net": 2.497557716196752e-12
+  },
+  {
+    "sig": "3qXVr9LSWst5dksAYENECz35qmY3283wfgDPnUaRUXZBDj7Z4ra39mwriopYB61hr2yETLg6fGBfLzrPa9QEpzEA",
+    "blockTime": 1792181054,
+    "tok": 32008.4226180017,
+    "sol": 0.018963065999997752,
+    "price_sol": 5.924398782879362e-07,
+    "wsol_net": 0.019152318999977103
+  },
+  {
+    "sig": "38NvmAJdr9biwZEEf857f39so7P9Mht3jT3MhkTLP3fxwyCz8k1X6ciYWmFraauvoQLYUEPshQDPnPWDB4Tt1vBS",
+    "blockTime": 1792181054,
+    "tok": 83240.90152001381,
+    "sol": 0.04928315099999736,
+    "price_sol": 5.920545080611374e-07,
+    "wsol_net": 0.049775000000009395
+  },
+  {
+    "sig": "63PdHT7jWu8rxZBEFUAtH4hzDXS2SWWmGjSqHFL4LtnxVdEUdJu4i9RpduF9kzAUJ8yJzj1bkbcFDjWz4B16CBW4",
+    "blockTime": 1792181053,
+    "tok": 113077.90651902556,
+    "sol": 0.06412303099999406,
+    "price_sol": 5.67069491945407e-07,
+    "wsol_net": 4.440892098500626e-15
+  }
+]

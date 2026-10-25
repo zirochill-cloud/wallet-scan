@@ -1,0 +1,261 @@
+# SolScope scoring configuration
+# ---------------------------------------------------------------------------
+# Every weight, threshold and constant used by the scoring model lives here.
+# Nothing is hardcoded in the scorer. See docs/05-scoring-methodology.md for the
+# rationale behind each value.
+#
+# FREEZE RULE: set `frozen: true` and commit before any validation run.
+# Weights changed after seeing validation results invalidate the validation.
+
+version: "1.0.0"
+frozen: false
+
+# ---------------------------------------------------------------------------
+# Dimension weights. MUST sum to 1.0 exactly (asserted at load time).
+# Confidence is deliberately NOT here: it is reported and applied separately.
+# ---------------------------------------------------------------------------
+weights:
+  early_entry:         0.25   # the stated primary objective
+  integrity:           0.15   # main defence against coordinated-wallet false positives
+  profitability:       0.15
+  repeatability:       0.15
+  risk:                0.10
+  token_selection:     0.10
+  exit_effectiveness:  0.10
+
+# ---------------------------------------------------------------------------
+# Hard gates. A gate excludes a wallet from ranking entirely, regardless of score.
+# ---------------------------------------------------------------------------
+gates:
+  integrity_min: 30            # below this: likely insider/operator, not a transferable signal
+  confidence_min: 25           # below this: too little evidence to rank at all
+  min_closed_positions: 5      # below this: report as unscored, not scored-zero
+  exclude_when_data_reason_unknown: true
+
+# ---------------------------------------------------------------------------
+# Recommendation bands, applied to confidence_adjusted_score (descending).
+# ---------------------------------------------------------------------------
+bands:
+  track:         75
+  watch:         60
+  investigate:   45
+  deprioritize:   0            # anything below `investigate`
+
+# ---------------------------------------------------------------------------
+# Shrinkage: shrunk = (n/(n+k))*observed + (k/(n+k))*prior
+# Continuous penalty for small samples. Preferred over a hard <N-trades cliff
+# because it degrades smoothly and cannot be gamed by adding one filler trade.
+# ---------------------------------------------------------------------------
+shrinkage:
+  prior: 50                    # neutral prior for 0-100 normalised inputs
+  k:
+    early_entry: 15            # needs ~15 qualifying entries to reach half-weight
+    profitability: 12
+    repeatability: 8
+    risk: 6
+    token_selection: 15
+    exit_effectiveness: 12
+    integrity: 0               # penalties are rate-based; no shrinkage
+
+# ---------------------------------------------------------------------------
+# Dimension 1 — Early-entry ability
+# Per-entry score e_i = w_age*age_i + w_mcap*mcap_i + w_prevolume*prevolume_i
+# ---------------------------------------------------------------------------
+early_entry:
+  weight_age: 0.45
+  weight_mcap: 0.35
+  weight_prevolume: 0.20
+
+  # age_i = 100 * 2^(-age_hours / half_life_hours)
+  age_half_life_hours: 12      # 0h->100, 12h->50, 24h->25, 48h->6
+
+  # mcap_i = 100 * (1 - log(mcap/ref) / log(ceiling/ref)), clamped [0,100]
+  mcap_reference_usd: 50000    # at or below this: full credit
+  mcap_ceiling_usd: 2000000    # at or above this: zero credit
+
+  # prevolume_i: 100 if volume in the hour before entry is a small share of the
+  # token's peak hourly volume in the 24h after entry; 0 at ratio 1.0.
+  prevolume_ratio_threshold: 0.10
+  prevolume_lookback_hours: 1
+  prevolume_forward_hours: 24
+
+  # An entry only counts toward early-entry credit if the token had a real market.
+  # This is what stops "first 2 transactions of every rug" scoring as skill.
+  min_liquidity_usd_for_credit: 3000
+  junk_entry_liquidity_floor_usd: 1000   # below this: counted as a junk entry, reported
+
+# ---------------------------------------------------------------------------
+# Dimension 2 — Profitability
+# ---------------------------------------------------------------------------
+profitability:
+  weight_median_roi: 0.50
+  weight_profit_factor: 0.30
+  weight_magnitude: 0.20       # log-scaled and capped so whales cannot dominate
+
+  # roi_component = 100 / (1 + exp(-median_roi / tau))
+  # tau 0.5 => -100%->12, -50%->27, 0%->50, +50%->73, +100%->88
+  roi_logistic_tau: 0.50
+
+  # profit_factor_component = 100 * min(PF, cap)/cap
+  profit_factor_cap: 5.0
+
+  # magnitude_component = 100 * clamp(log10(1+usd)/log10(1+scale), 0, 1)
+  magnitude_log_scale_usd: 100000
+
+# ---------------------------------------------------------------------------
+# Dimension 3 — Repeatability
+# Down-weights correlated positions before counting them.
+# ---------------------------------------------------------------------------
+repeatability:
+  weight_effective_n: 0.35
+  weight_win_rate: 0.30
+  weight_temporal_dispersion: 0.20
+  weight_regime_coverage: 0.15
+
+  # Effective sample size (Kish): n_eff = (sum w)^2 / sum w^2
+  # w_i = 1 / (1 + c_i); c_i = other positions by this wallet that share a token
+  # or that were opened in the same slot/bundle as another of its positions.
+  independence_same_token_weight: 1.0
+  independence_same_slot_weight: 1.0
+
+  n_eff_full_credit: 15
+
+  # Normalised Shannon entropy of closed positions across calendar months,
+  # divided by log(number of months in the collection window).
+  temporal_dispersion_months_min: 1
+
+  # Share of distinct launch-week cohorts the wallet has entries in.
+  regime_min_distinct_weeks: 3
+
+# ---------------------------------------------------------------------------
+# Dimension 4 — Risk management
+# Uses MARK-TO-MARKET equity, so "never sells a loser" cannot fake low drawdown.
+# ---------------------------------------------------------------------------
+risk:
+  weight_drawdown: 0.30
+  weight_tail: 0.25
+  weight_loss_ratio: 0.20
+  weight_concentration: 0.15
+  weight_failure_rate: 0.10
+
+  # drawdown_component = 100 * exp(-max_drawdown / scale)
+  drawdown_scale: 0.60         # 0%->100, 30%->61, 60%->37, 100%->19
+
+  # tail_component = 100 / (1 + exp(-(p_pct + center)/scale)) on ROI
+  tail_percentile: 5           # 5th percentile of closed-position returns
+  tail_logistic_center: -0.60
+  tail_logistic_scale: 0.20
+
+  # loss_ratio_component = 100 * clamp((avg_win/avg_loss)/target, 0, 1)
+  loss_ratio_target: 3.0
+
+  # concentration_component from HHI of cost basis
+  # = 100 * clamp((ceiling - HHI)/(ceiling - ideal), 0, 1)
+  hhi_ideal: 0.05              # diversified
+  hhi_ceiling: 0.50            # effectively all capital in one token
+
+  # failure_component = 100 * (1 - failed_tx_rate)
+  failure_rate_penalty_ceiling: 0.50   # rates above this floor the component at 0
+
+# ---------------------------------------------------------------------------
+# Dimension 5 — Token selection
+# Benchmarked against the cohort of tokens launched in the same week, so that
+# wallets are comparable across periods and across market conditions.
+# ---------------------------------------------------------------------------
+token_selection:
+  weight_cohort_excess: 0.60
+  weight_hit_rate: 0.40
+
+  benchmark_kind: launch_week
+  benchmark_forward_window_days: 30
+  benchmark_min_cohort_n: 10   # cohorts smaller than this fall back to all_tokens
+
+  # excess_i = log(1+multiple_i) - log(1+cohort_median_multiple)
+  # component = 100 / (1 + exp(-mean_excess / scale))
+  cohort_excess_logistic_scale: 0.50
+
+  # hit = token reached >= hit_multiple * entry mcap within the window
+  hit_multiple: 3.0
+  hit_rate_full_credit: 0.25   # a 25% hit rate earns full marks
+
+# ---------------------------------------------------------------------------
+# Dimension 6 — Exit effectiveness
+# Capture is only assessed where a favourable exit actually existed.
+# ---------------------------------------------------------------------------
+exit_effectiveness:
+  weight_capture: 0.60
+  weight_adverse: 0.25
+  weight_impact: 0.15
+
+  observation_windows_hours: [1, 6, 24, 168, 720]
+
+  # capture_i = realized_return / max_favorable_return, clamped [0,1]
+  # Excluded (not zero) when max_favorable_return <= 0: no opportunity existed.
+  capture_requires_positive_opportunity: true
+
+  # A closed loser exited after the token had already fallen this far from entry.
+  adverse_exit_drawdown_pct: 0.80
+
+  # Fraction of profitable exits that were realistically achievable at size.
+  realistic_impact_threshold: 0.01   # position value <= 1% of pool liquidity
+
+# ---------------------------------------------------------------------------
+# Dimension 7 — Behavioral integrity
+# Starts at 100 and subtracts RATE-BASED penalties. This is a hygiene score,
+# not a performance score. It is evidence of coordination, never proof of it.
+# ---------------------------------------------------------------------------
+integrity:
+  base_score: 100
+  penalties:
+    launcher_affiliated:        40   # bought in the launch tx, fee paid by deployer,
+                                     # or within the first 4 txs after launch
+    same_slot_cohort:           25   # buys sharing a slot or Jito bundle with >=2 wallets
+    common_funder_cluster:      15   # shares a first funder with >=2 wallets
+    sniper_bot_signature:       20   # median hold < 2 min AND >= 30 trades
+    wash_trade_signature:       30   # self-matching / circular SOL flows
+    fresh_wallet_sophistication: 10  # wallet < 24h old behaving like a specialist
+    concentration_then_dump:    20   # held > 20% of float, then exited heavily
+
+  # Multi-wallet heuristics must exclude exchange/service funders, or every
+  # unrelated user of the same exchange appears coordinated.
+  exclude_exchange_funders: true
+  exchange_funder_allowlist: []      # populated from observed high-fanout funders
+
+  sniper_median_hold_seconds: 120
+  sniper_min_trades: 30
+  launch_affiliation_first_n_txs: 4
+
+# ---------------------------------------------------------------------------
+# Dimension 8 — Data confidence (reported separately, then applied).
+# ---------------------------------------------------------------------------
+confidence:
+  weight_coverage: 0.30          # share of the window's activity actually decoded
+  weight_price_provenance: 0.25  # share of entries priced from the swap itself
+  weight_sample: 0.20            # effective sample size
+  weight_recency: 0.15           # days since last observed trade
+  weight_metadata: 0.10          # share of tokens with resolved mint metadata
+
+  sample_full_credit_n_eff: 30
+  recency_half_life_days: 60
+  coverage_cap_below: 0.50       # coverage under this caps confidence at `coverage_cap_value`
+  coverage_cap_value: 40
+  interpolated_price_cap_above: 0.50   # mostly interpolated prices cap confidence here
+  interpolated_price_cap_value: 50
+
+# ---------------------------------------------------------------------------
+# Ranking and clustering
+# ---------------------------------------------------------------------------
+ranking:
+  min_wallets_for_percentiles: 50   # below this, percentiles are suppressed
+  cluster_dedup: true               # cluster members count as ONE signal
+  cluster_independence_mode: sqrt   # independence_factor = 1/sqrt(cluster_size)
+  max_per_cluster_in_top_n: 2
+
+# ---------------------------------------------------------------------------
+# Sensitivity / "what would change this score"
+# Recompute the overall score with one metric moved to its next-band value.
+# ---------------------------------------------------------------------------
+sensitivity:
+  enabled: true
+  top_n: 3                    # report the 3 largest effects
+  min_score_delta: 1.0        # ignore noise below this

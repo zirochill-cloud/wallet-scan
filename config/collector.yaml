@@ -1,0 +1,56 @@
+# Phase 1 forward collector tunables (doc 07 Phase 1, doc 02 §4.1).
+#
+# The shortlist filter is the credit funnel: everything that fails here is
+# never subscribed to and never fetched historically, so it costs nothing.
+
+job: collect
+
+data_dir: data/raw
+
+discovery:
+  # GeckoTerminal keyless new_pools feed: pools created in the last ~48h.
+  # ~10 calls/min keyless — the conservative published figure (doc 01 §2.2).
+  geckoterminal_enabled: true
+  geckoterminal_poll_seconds: 120
+  geckoterminal_pages: 2          # 20 pools per page
+
+  # DexScreener token-profiles feed (60 req/min): surfaced mints, not pairs.
+  # Each new mint is resolved through the pair-lookup endpoint (300 req/min).
+  dexscreener_enabled: true
+  dexscreener_poll_seconds: 300
+  dexscreener_max_lookups: 20    # pair lookups per poll — bounds request burn
+
+  http_timeout_seconds: 15
+  http_retries: 3
+
+filter:
+  # "Traction" gate from doc 02 §4.1: minimum liquidity, minimum recent trade
+  # count, and more than one hour of activity. Instant rugs die before this.
+  min_liquidity_usd: 2000
+  min_age_hours: 1.0
+  min_txns_h1: 5                  # GT h1 trades (buys+sells); null => unknown, fails closed
+
+subscription:
+  # LaserStream WSS (standard Solana methods) on the free plan. Every
+  # logsSubscribe mention list holds EXACTLY ONE address (Solana spec), so
+  # one subscription per shortlisted pool.
+  max_pools: 100                  # shortlist cap per run
+  subscriptions_per_connection: 25
+  max_connections: 5              # documented free-plan connection limit
+  reconnect_backoff_seconds: [1, 2, 5, 10, 30]
+  idle_warn_seconds: 60           # quiet stream is suspicious; log after this
+
+metering:
+  # Helius meters LaserStream WSS at 2 credits / 0.1 MB uncompressed, plus
+  # 1 credit to open a connection (doc 01 §1.1, Helius credits docs).
+  wss_bytes_per_unit: 100000      # 0.1 MB
+  wss_credits_per_unit: 2
+  wss_connection_credits: 1
+  flush_every_bytes: 1000000      # settle ledger every 1 MB of streamed data
+
+checkpoint:
+  overlap_slots: 64               # deliberate re-fetch window on recovery (schema default)
+  # liveness high-water mark for quiet pools: on logsSubscribe, silence means
+  # "no transactions", so a healthy idle socket still proves coverage up to
+  # now. Bounds the re-fetch window a restart has to replay.
+  heartbeat_seconds: 30

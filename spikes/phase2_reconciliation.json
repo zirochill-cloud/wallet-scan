@@ -1,0 +1,117 @@
+{
+  "pair": "6nvzg4mn3NQ5aDLgp2cHAM3nUSk3hWePMgJkhAKJNxY9",
+  "token": "EN3rLpbQa6ZUdH1SrS9oHkkWQUkQBj6VjnqZQhzrpump",
+  "base_symbol": "uncdog",
+  "quote_symbol": "SOL",
+  "reference": 2.6444999999999996e-07,
+  "before": 2.647e-07,
+  "after": 2.642e-07,
+  "drift_pct": 0.18907165815843627,
+  "tolerance_pct": 10.0,
+  "swaps_derived": 11,
+  "compared": 11,
+  "within_tolerance": 11,
+  "failed": 0,
+  "max_deviation_pct": 7.78658922158708,
+  "derived_rows": [
+    {
+      "base_amount": 2726735.705735028,
+      "quote_amount": 0.7108268200000012,
+      "execution_price": 2.6068783215951193e-07,
+      "signature": "3pAqBWVSVmDWiic3TkANH5qtondd3VBAPkmRnpCbjnXc1K8tVVwVJy6jRbXkQ7fXPabRxg7CruiDfrKY4jrZSFek",
+      "blockTime": 1792182853,
+      "deviation_pct": 1.4226386237428743,
+      "within_tolerance": true
+    },
+    {
+      "base_amount": 165032.68209201097,
+      "quote_amount": 0.04195038499999981,
+      "execution_price": 2.5419440845426687e-07,
+      "signature": "4oahZfzARCfPEwfskZG4dh1kSNjqiAwBCBN9UyGncXWkbQNWXTpA4FVce1YjcWUMb7HZW3ARmwPrjD2T1WuQbQdk",
+      "blockTime": 1792182852,
+      "deviation_pct": 3.878083397894912,
+      "within_tolerance": true
+    },
+    {
+      "base_amount": 5667328.01362,
+      "quote_amount": 1.4408292030000212,
+      "execution_price": 2.5423430574996717e-07,
+      "signature": "4sLMe4Y2tsDiBbnT6QzRnvMifRpwa6fYZJq9gELQzhJvA5p3kykNSbHki9pmeZ3VDG8wc3SNDPiGmsui4p38cjb2",
+      "blockTime": 1792182851,
+      "deviation_pct": 3.862996502186723,
+      "within_tolerance": true
+    },
+    {
+      "base_amount": 402171.5774100423,
+      "quote_amount": 0.09878518400000047,
+      "execution_price": 2.456294515792746e-07,
+      "signature": "2YQ9VLbN51cKCBnsAMC1v235j4LYEzQmj4TLTCZsWFSQCSyNAzhBjiLxVwTzmdYDpKhgDbH8kph69T67jGzshw8M",
+      "blockTime": 1792182851,
+      "deviation_pct": 7.11686459471559,
+      "within_tolerance": true
+    },
+    {
+      "base_amount": 1054621.57223,
+      "quote_amount": 0.26088263499991626,
+      "execution_price": 2.473708502361461e-07,
+      "signature": "4oZUaW6ExzR7kNyxEan4jjCWiM6n3RVf8dMoe3KChtTNrxu1d9nfc7C8m8MsgBvcjLYXSnFyLhyZkc7Dq2oFJEpA",
+      "blockTime": 1792182849,
+      "deviation_pct": 6.458366331576429,
+      "within_tolerance": true
+    },
+    {
+      "base_amount": 1457055.5711150002,
+      "quote_amount": 0.3553151889999526,
+      "execution_price": 2.4385836480351293e-07,
+      "signature": "57ggWtSRaF4gtTHZ8RCrUHGYYJMdHj8CeV7dPJxVEo53V77FPMQUQkunPhUuBgyEbKNQAat7nQBaFCL7w9HPnkVz",
+      "blockTime": 1792182848,
+      "deviation_pct": 7.78658922158708,
+      "within_tolerance": true
+    },
+    {
+      "base_amount": 109109.94862800837,
+      "quote_amount": 0.02791056400000258,
+      "execution_price": 2.558021917429258e-07,
+      "signature": "mccQ8nHW5HY3Jrrayko19StUU5eQFhsSEMuf6xMDSMjufsDJDn1t3fJkXaFNeDfDB7XUz3hstKMmVoWW1Ckgn7j",
+      "blockTime": 1792182845,
+      "deviation_pct": 3.2701108932025664,
+      "within_tolerance": true
+    },
+    {
+      "base_amount": 139608.52868500352,
+      "quote_amount": 0.03741935699999743,
+      "execution_price": 2.6803059492465625e-07,
+      "signature": "4yP97zhfnchVdY5841i1BKQTpx8gA3ZtqrvZU7RBKhfywNAdhsUFDkQj1sC7jKNsDFxMHCnD3SPb7MSwbYUzzEAF",
+      "blockTime": 1792182831,
+      "deviation_pct": 1.3539780391969312,
+      "within_tolerance": true
+    },
+    {
+      "base_amount": 3277213.4806160033,
+      "quote_amount": 0.8830842539999963,
+      "execution_price": 2.694619252676841e-07,
+      "signature": "3muuBHX3Vk8CbjyJ6VWTbVakdEDpPijZ4X4fFyHNS3HuZWKx12bMAK8Mz5hBSWWfKFLZoSbo1y6TRGikSz3mgYSe",
+      "blockTime": 1792182829,
+      "deviation_pct": 1.8952260418544635,
+      "within_tolerance": true
+    },
+    {
+      "base_amount": 2548010.824791014,
+      "quote_amount": 0.7020692770000068,
+      "execution_price": 2.755362222833531e-07,
+      "signature": "5bYkXLKhuH6VLGG6jR9LzuaGSWBJekeUfG7r7hxQRqkhMGn2HT4YnMjfNroupUenmL2qzQoJBwoEBRNKuKePd8wu",
+      "blockTime": 1792182829,
+      "deviation_pct": 4.192180859653299,
+      "within_tolerance": true
+    },
+    {
+      "base_amount": 108493.06522500515,
+      "quote_amount": 0.030201231999996025,
+      "execution_price": 2.783701606859508e-07,
+      "signature": "4dop78JuDTPV5EUyADvTrqyY9YAZuqwt985VYryLGcA1Y8WuH9dWg7y2StjT9w7ihTzj2PyzfzcLibSx5MmzCwWN",
+      "blockTime": 1792182829,
+      "deviation_pct": 5.263815725449366,
+      "within_tolerance": true
+    }
+  ]
+}

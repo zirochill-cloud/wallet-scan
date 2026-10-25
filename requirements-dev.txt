@@ -1,0 +1,29 @@
+# Design-phase tooling. Not the application's runtime dependencies.
+#
+# NOTE: system pip cannot write to the shared interpreter prefix in this
+# environment, and `--user` is disabled inside the venv. Use a project-local
+# virtualenv, which is already gitignored:
+#
+#   python3 -m venv .venv
+#   ./.venv/bin/pip install -r requirements-dev.txt
+#   ./.venv/bin/python tests/test_phase0.py
+
+# Schema verification (tests/test_schema_smoke.py)
+psycopg[binary]>=3.1      # direct PostgreSQL adapter
+pgserver>=0.1.4           # bundles a local PostgreSQL for tests without a daemon/docker
+#
+# Windows note (verified 2026-10-25): pgserver publishes no Windows build, so
+# test_schema_smoke.py and test_ledger_live.py cannot provision a database on
+# Windows and exit 0 with "SKIP". Exit 0 is NOT a pass — point them at a real
+# server with SOLSCOPE_TEST_PGDSN, or run them under Linux/macOS. psycopg's
+# binary wheel also fails to unpack when the project path is near MAX_PATH
+# ("No such file or directory ... psycopg_binary.libs"), so keep the checkout
+# short or enable Windows long-path support.
+
+# Scoring configuration validation (tests/test_scoring_config.py)
+# and all solscope config loading (solscope/config.py)
+pyyaml>=6.0
+
+# Live ledger + migration tests (tests/test_ledger_live.py)
+# accept a reachable server via SOLSCOPE_TEST_PGDSN, in which case
+# pgserver is not needed.

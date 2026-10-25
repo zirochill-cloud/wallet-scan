@@ -1,0 +1,61 @@
+# Monthly credit budget per provider.
+#
+# The cap is a HARD limit, not a target. The ledger refuses any job that would
+# push recorded spend over it, and the job fails loudly rather than silently
+# degrading the provider account (doc 03 §5, doc 08 "cost traps").
+#
+# Helius Free = 1,000,000 credits/month. getSignaturesForAddress and
+# getTransaction cost 1 credit each; getTransfersByAddress is BLOCKED on the
+# free plan and must never be routed through (doc 01).
+
+providers:
+  helius:
+    monthly_cap_credits: 1000000
+    # Warn once spend crosses this fraction of the cap, so a runaway loop is
+    # visible before it becomes a failure.
+    warn_ratio: 0.80
+
+    # Credits charged per operation. Used to pre-flight a job's cost before
+    # spending anything, and to record the ledger rows after.
+    operation_costs:
+      get_signatures_for_address: 1
+      get_transaction: 1
+      get_account_info: 1
+      # Pool reserve enumeration (Phase 2 gate / Phase 5 valuation). Helius
+      # does not publish a per-method credit figure for this call on the free
+      # plan; 10 is a deliberately CONSERVATIVE assumption so the ledger
+      # over-charges rather than under-charges while it is unverified. Correct
+      # it from the dashboard's usage breakdown before trusting a projection
+      # built on it.
+      get_token_accounts_by_owner: 10
+      # LaserStream WSS standard methods ARE metered: 2 credits per 0.1 MB
+      # uncompressed streamed data, plus 1 credit per connection opened
+      # (helius.dev/docs/billing/credits). Units are 0.1 MB blocks; the
+      # collector converts streamed bytes to units before charging.
+      websocket_connection: 1
+      websocket_data: 2
+      # getTransfersByAddress is deliberately absent. It errors on the free plan.
+
+  # DexScreener is keyless and rate-limited, not credit-based. We still record
+  # request volume so rate-limit pressure is visible.
+  dexscreener:
+    monthly_cap_requests: 300000
+    warn_ratio: 0.80
+    operation_costs:
+      token_profiles: 1            # one request; keyless, metered for visibility
+      token_pairs: 1
+
+  # GeckoTerminal is also keyless (~10 calls/min). Same reasoning: request
+  # volume is metered for visibility, not billed.
+  geckoterminal:
+    monthly_cap_requests: 40000
+    warn_ratio: 0.80
+    operation_costs:
+      new_pools: 1
+
+# Fail-closed behaviour: when a ledger row cannot be written (DB down), should
+# the job proceed (spend unrecorded) or abort?
+#
+#   abort   — safer for the credit budget, costs availability. Default.
+#   proceed — safer for collection continuity, risks unmetered spend.
+fail_closed_on_ledger_error: true

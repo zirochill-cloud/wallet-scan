@@ -1,0 +1,12 @@
+{
+  "pool": "6nvzg4mn3NQ5aDLgp2cHAM3nUSk3hWePMgJkhAKJNxY9",
+  "signatures_scanned": 20,
+  "trades_derived": 0,
+  "distinct_tokens": 0,
+  "compared": 0,
+  "within_tolerance": 0,
+  "failed": 0,
+  "tolerance_pct": 5.0,
+  "max_deviation_pct": 0.0,
+  "sample_trade": null
+}
