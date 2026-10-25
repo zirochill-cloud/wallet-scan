@@ -65,6 +65,7 @@ def connect():
     """Return (admin_dsn, dbname, cleanup) for a scratch database."""
     dsn = os.environ.get("SOLSCOPE_TEST_PGDSN")
     if dsn:
+        # Returned as {"dsn": ...} so admin and target can be split apart below.
         return {"dsn": dsn}, "solscope_smoke", lambda: None
 
     try:
@@ -88,11 +89,18 @@ def main() -> int:
         cur.execute(f"DROP DATABASE IF EXISTS {dbname}")
         cur.execute(f"CREATE DATABASE {dbname}")
 
+    # Connect into the scratch database we just created — NOT the admin database
+    # named in the DSN. When $SOLSCOPE_TEST_PGDSN is a conninfo string the old
+    # code re-used it verbatim, so the schema was applied to `postgres` and the
+    # scratch database was never tested (and the admin database was left dirty,
+    # which then broke test_ledger_live on a duplicate type). Discovered
+    # 2026-10-26 with a real server.
     target = dict(conninfo)
-    if "dsn" in target:
-        target = {"conninfo": target["dsn"]}
-    else:
-        target["dbname"] = dbname   # connect into the database we just created
+    dsn_text = target.pop("dsn", None) or target.pop("conninfo", None)
+    if dsn_text:
+        from psycopg.conninfo import conninfo_to_dict
+        target = conninfo_to_dict(dsn_text) or {}
+    target["dbname"] = dbname
     with psycopg.connect(**target, autocommit=True) as conn, conn.cursor() as cur:
         cur.execute(schema)
         cur.execute(

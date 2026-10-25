@@ -91,6 +91,20 @@ orders of magnitude; reserve-derived prices require decoding the pool's real sta
 the early-entry objective is unreachable at this budget. The honest outcome is to publish the finding
 and reassess scope, not to substitute candle-based prices and pretend the precision is unchanged.
 
+**Status 2026-10-26 — met for PumpSwap; two of the three criteria as written were not the ones
+evaluated.** Full evidence in [doc 11](11-phase2-gate.md).
+
+| Exit criterion as written above | Outcome |
+|---|---|
+| 20+ live pairs, price and liquidity within tolerance | **Met for PumpSwap** — 24 pools, mean price 0.36%, liquidity 0.04%, 96% inside 5% (fresh pull, shipped criterion). |
+| `exec_price` vs `pool_price` slippage plausible and correctly signed | **Not evaluated as written.** The reference it needs — the same-transaction pool spot — was measured 27% wrong on a correct-looking fixture, because a transaction's `meta` omits vaults it never touched. Replaced by reserve-vs-reserve reconciliation plus a mid-window drift check. Doc 11 §2.1. |
+| Multi-pool tokens: mcap from the deepest pool, choice recorded | **Not evaluated.** The gate prices one pool at a time and deliberately refuses to substitute another pool for the mint. Market cap is Phase 5 work. |
+
+**Scope: PumpSwap only** — Raydium AMM v4/CPMM/LaunchLab, pump.fun bonding curves, Orca Whirlpool,
+Meteora DLMM, Jupiter routing and aggregator hops are all outside the gate (doc 11 §8). Phases 3–6
+can proceed on PumpSwap data; **Phase 9 cannot make a ranking claim without the rest**, because
+scoring wallets on incomplete history biases every per-wallet rate.
+
 ## Phase 3 — Position reconstruction (1–2 weeks)
 
 FIFO lot ledger; position episodes; realized/unrealized split with mark-to-market equity; fee

@@ -10,7 +10,40 @@
 
 # Schema verification (tests/test_schema_smoke.py)
 psycopg[binary]>=3.1      # direct PostgreSQL adapter
-pgserver>=0.1.4           # bundles a local PostgreSQL for tests without a daemon/docker
+pgserver>=0.1.4           # bundles a local PostgreSQL for tests without a daemon/docker (Linux/macOS only)
+#
+# ---------------------------------------------------------------------------
+# RESOLVED (2026-10-26): how the two DB suites run on Windows.
+#
+# Chosen path: a NATIVE Windows PostgreSQL run locally, no admin rights needed,
+# using EDB's portable server binaries. pgserver has no Windows build, so it
+# cannot be the path here.
+#
+#   1. Download the portable binaries (no installer, nothing touches the system):
+#        https://get.enterprisedb.com/postgresql/postgresql-16.6-1-windows-x64-binaries.zip
+#      Extract only bin/ share/ lib/ (skip pgAdmin 4/ — its deep tree blows past
+#      MAX_PATH and extraction fails with WinError 206).
+#
+#   2. Create the venv at a SHORT path. Under this project's very long path,
+#      psycopg-binary fails to unpack its DLL:
+#        python -m venv /tmp/pvenv       # = %LOCALAPPDATA%\Temp\pvenv
+#        /tmp/pvenv/Scripts/pip install "psycopg[binary]" pyyaml
+#
+#   3. Init and start the server (again, short paths):
+#        pgsql/bin/initdb.exe -D /tmp/pgdata-solscope -U postgres -A trust -E UTF8 --locale=C
+#        pgsql/bin/pg_ctl.exe  -D /tmp/pgdata-solscope -o "-p 5433 -k /tmp -h 127.0.0.1" -l /tmp/pglog.txt start
+#
+#   4. Point the tests at it and run them with that venv's python:
+#        export SOLSCOPE_TEST_PGDSN="host=127.0.0.1 port=5433 user=postgres dbname=postgres"
+#        /tmp/pvenv/Scripts/python tests/test_schema_smoke.py
+#        /tmp/pvenv/Scripts/python tests/test_ledger_live.py
+#
+# Verified 2026-10-26: both suites pass for real (41 tables in the scratch DB,
+# migration runner tracked as a 42nd). Both suites create their OWN scratch
+# database and leave `postgres` at 0 tables — assert that after any harness edit,
+# because the conninfo-shaped DSN previously sent both suites straight into
+# `postgres` instead of their scratch database, which passed vacuously.
+# ---------------------------------------------------------------------------
 #
 # Windows note (verified 2026-10-25): pgserver publishes no Windows build, so
 # test_schema_smoke.py and test_ledger_live.py cannot provision a database on

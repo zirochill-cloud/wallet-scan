@@ -80,6 +80,12 @@ class GateRow:
     # measurement's own noise floor: a deviation smaller than the drift is not
     # distinguishable from the pool having simply traded.
     reserve_drift_pct: float | None = None
+    # Third leg of the triangulation: what a recent trade ACTUALLY paid for this
+    # pool, from chain balance deltas at that trade's own time. Present only when
+    # the run decodes swaps (``--sigs`` > 0). It is deliberately NOT a pass/fail
+    # input: an executed price is a different quantity from a reserve mid, and
+    # averaging execution prices against a reserve ratio would compare the two.
+    exec_price_quote: float | None = None
 
     @property
     def skew_signature(self) -> bool:
@@ -651,6 +657,7 @@ class Deriver:
         report = GateReport(tolerance_pct=tolerance_pct, required_pairs=min_pairs)
         before: dict[str, dict[str, tuple[int, int]]] = {}
         decoded: dict[str, int] = {}
+        exec_px: dict[str, float] = {}
         skips: list[str] = []
 
         for pool in pools:
@@ -660,10 +667,16 @@ class Deriver:
                 continue
             before[pool] = self.vault_reserves(pool)
             if sigs_per_pool > 0:
-                n, _swaps, reasons = self.process_pool(pool, limit=sigs_per_pool,
-                                                       known=known)
+                n, found, reasons = self.process_pool(pool, limit=sigs_per_pool,
+                                                      known=known)
                 decoded[pool] = n
                 skips.extend(reasons)
+                # Third triangulation number: median of what recent trades
+                # actually paid, at each trade's own time.
+                vals = sorted(exec_price_quote(s) for s in found)
+                vals = [v for v in vals if v == v and v > 0]
+                if vals:
+                    exec_px[pool] = vals[len(vals) // 2]
 
         mints = [known[p][0] for p in before]
         snapshot = self.fetch_snapshot(mints, opener=opener)
@@ -675,7 +688,8 @@ class Deriver:
             base_mint, quote_mint = known[pool]
             row = self._gate_row(
                 pool, base_mint, quote_mint, snapshot=snapshot,
-                reserves=reserves, swaps_decoded=decoded.get(pool, 0))
+                reserves=reserves, swaps_decoded=decoded.get(pool, 0),
+                exec_price=exec_px.get(pool))
             p_before = self.price_from_reserves(reserves, base_mint, quote_mint)
             p_after = self.price_from_reserves(after.get(pool) or {},
                                                base_mint, quote_mint)
@@ -705,16 +719,21 @@ class Deriver:
 
     def _gate_row(self, pool: str, base_mint: str, quote_mint: str, *,
                   snapshot: dict, reserves: dict[str, tuple[int, int]],
-                  swaps_decoded: int = 0) -> GateRow:
+                  swaps_decoded: int = 0,
+                  exec_price: float | None = None) -> GateRow:
         """One reconciliation line: chain reserves vs the snapshot's reserves.
 
         The compared quantity is the reserve ratio, because that is what both
-        sides actually measure. DexScreener's ``priceNative`` is a trade-derived
-        price, not a mid: measured 2026-10-25 it sat 15–24% above the ratio
-        implied by DexScreener's *own* reported reserves on tokens in a dump.
-        Comparing against it would fail the gate for a reason that has nothing
-        to do with our derivation, so ``priceNative`` is carried for context and
-        never used as the reference.
+        sides actually measure — and DexScreener's reported ``liquidity.base`` /
+        ``liquidity.quote`` agreed with our chain reads to 0.06–4% at two instants
+        30s apart (artifacts/triangulation.json, 2026-10-26).
+
+        ``priceNative`` is *not* stale, it is a different quantity: it tracked the
+        executed price within 4% on an active pool while sitting 14–20% above
+        both reserve ratios, so it is a trade-derived price rather than a reserve
+        mid. Carried in the row for context, never used as the reference. On
+        halted pools it detached from the reserves entirely (7.6–8.5x), which is
+        a further reason not to grade against it.
         """
         note = ""
         derived_price = self.price_from_reserves(reserves, base_mint, quote_mint)
@@ -790,6 +809,7 @@ class Deriver:
             slippage_bps=None, slippage_plausible=None, note=note,
             base_reserve_dev_pct=base_dev, quote_reserve_dev_pct=quote_dev,
             dex_price_native=snap.get("price_native"),
+            exec_price_quote=exec_price,
         )
 
 
@@ -822,7 +842,7 @@ def _reserve_basis_available(d_base, d_quote) -> bool:
 
 def format_gate(report: GateReport) -> str:
     """Human-readable gate table + verdict (the artifact doc 07 asks for)."""
-    hdr = (f"{'pool':>10} {'n':>3} {'chain px':>12} {'snap px':>12} "
+    hdr = (f"{'pool':>10} {'n':>3} {'chain px':>12} {'snap px':>12} {'exec px':>12} "
            f"{'dev%':>7} {'base%':>7} {'quote%':>7} {'liq%':>7}  note")
     lines = [hdr, "-" * len(hdr)]
     for r in report.rows:
@@ -830,10 +850,11 @@ def format_gate(report: GateReport) -> str:
             return format(v, spec) if v is not None else "-"
         dp = f"{r.derived_price_quote:.3e}" if r.derived_price_quote else "-"
         sp = f"{r.snapshot_price_quote:.3e}" if r.snapshot_price_quote else "-"
+        ep = f"{r.exec_price_quote:.3e}" if r.exec_price_quote else "-"
         mark = " ~moved" if r.pool_moved else (" ~lag" if r.skew_signature else "")
         lines.append(
             f"{r.pool_address[-10:]:>10} {r.swaps_decoded:>3} {dp:>12} {sp:>12} "
-            f"{f(r.deviation_pct):>7} {f(r.base_reserve_dev_pct):>7} "
+            f"{ep:>12} {f(r.deviation_pct):>7} {f(r.base_reserve_dev_pct):>7} "
             f"{f(r.quote_reserve_dev_pct):>7} {f(r.liquidity_dev_pct):>7}  {r.note}{mark}")
     n = len(report.priced_rows)
     lines.append("")

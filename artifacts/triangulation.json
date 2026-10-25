@@ -1,0 +1,63 @@
+{
+  "rounds": [
+    {
+      "DXp5zehrAhtNz7yMV16D5FFojagJBTBTzLu4ydKjsNto": {
+        "chain": 2.4384171242448534e-09,
+        "provider_reserve": 2.438391068314497e-09,
+        "price_native": 2.086e-08,
+        "price_usd": 2.119e-06,
+        "provider_liq_usd": 2246.94
+      },
+      "H2hyLzX9VnjhamfXUkd1c8Q9B8GMSxsdoEuuMSjTcVjf": {
+        "chain": 6.353966159947586e-07,
+        "provider_reserve": 6.10597797431668e-07,
+        "price_native": 7.228e-07,
+        "price_usd": 7.343e-05,
+        "provider_liq_usd": 21460.79
+      },
+      "9uLRSjzqhDsWgCn7tAnMVYEZ4t8uFVtGp75Me9HzriM8": {
+        "chain": 2.6675290059190293e-09,
+        "provider_reserve": 2.6674363489748855e-09,
+        "price_native": 2.028e-08,
+        "price_usd": 2.059e-06,
+        "provider_liq_usd": 2291.79
+      }
+    },
+    {
+      "DXp5zehrAhtNz7yMV16D5FFojagJBTBTzLu4ydKjsNto": {
+        "chain": 2.4384171242448534e-09,
+        "provider_reserve": 2.438391068314497e-09,
+        "price_native": 2.086e-08,
+        "price_usd": 2.119e-06,
+        "provider_liq_usd": 2246.94
+      },
+      "H2hyLzX9VnjhamfXUkd1c8Q9B8GMSxsdoEuuMSjTcVjf": {
+        "chain": 6.175317482126568e-07,
+        "provider_reserve": 6.317147312262513e-07,
+        "price_native": 7.401e-07,
+        "price_usd": 7.519e-05,
+        "provider_liq_usd": 21739.85
+      },
+      "9uLRSjzqhDsWgCn7tAnMVYEZ4t8uFVtGp75Me9HzriM8": {
+        "chain": 2.6675290059190293e-09,
+        "provider_reserve": 2.6674363489748855e-09,
+        "price_native": 2.028e-08,
+        "price_usd": 2.059e-06,
+        "provider_liq_usd": 2291.79
+      }
+    }
+  ],
+  "exec": {
+    "DXp5zehrAhtNz7yMV16D5FFojagJBTBTzLu4ydKjsNto": [
+      2.165186416700525e-08
+    ],
+    "H2hyLzX9VnjhamfXUkd1c8Q9B8GMSxsdoEuuMSjTcVjf": [
+      7.546217900625976e-07
+    ],
+    "9uLRSjzqhDsWgCn7tAnMVYEZ4t8uFVtGp75Me9HzriM8": [
+      2.5424237237326902e-08
+    ]
+  },
+  "gap_seconds": 30,
+  "captured_at": "2026-10-25T22:58:32Z"
+}

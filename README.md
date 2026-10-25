@@ -16,8 +16,21 @@ The design is complete and falsifiable, and implementation has begun: Phases 0�
 | Phase 0 — CLI, schema, credit ledger with hard cap | **Done** — `solscope migrate\|doctor\|budget`, tested |
 | Phase 1 — forward collector (discovery, WSS archive, checkpoints) | **Done** — `solscope ingest`, verified live |
 | Phase 2 — swap decode + price derivation | **Done** — `solscope derive` |
-| Phase 2 go/no-go gate | **PASSED** on live mainnet (doc 11) |
+| Phase 2 go/no-go gate | **PASSED for PumpSwap** on live mainnet, re-confirmed 2026-10-26 (doc 11) |
+| Phase 1b — retrospective anchor discovery | **BLOCKED** — non-independent anchors; quality filter passed 44/45 bundled wallets (`NOTES.md` § `ANCHOR_SELECTION_CRITERIA`) |
 | Phase 3+ — positions, discovery, scoring, reports, validation | **Not started** |
+
+> **Scope of “Phase 2 complete.”** It means *PumpSwap only*: reserve-based price and
+> liquidity derivation for PumpSwap pools quoted in wSOL/USDC. **Not covered:** Raydium
+> AMM v4 / CPMM / LaunchLab, pump.fun bonding curves, Orca Whirlpool, Meteora DLMM,
+> Jupiter routing and aggregator hops. Those DEXes do not block Phases 3–6, but full
+> coverage **is** required before any Phase 9 validation claim — scoring wallets on
+> incomplete history biases every per-wallet rate. Coverage table: [doc 11 § 8](docs/11-phase2-gate.md).
+>
+> **The two are independent.** Phase 2 passing does **not** unblock Phase 1b: the
+> retrospective anchor blocker (`NOTES.md` § `ANCHOR_SELECTION_CRITERIA`) remains open.
+> A Phase 4 discovery build cannot be trusted until anchors are de-duplicated by cluster
+> and the quality filter is measured against known-negative bundled sets.
 
 ## Read in this order
 
@@ -35,6 +48,8 @@ The design is complete and falsifiable, and implementation has begun: Phases 0�
 | [09-validation.md](docs/09-validation.md) | How we prove the ranking is useful — or conclude it isn't |
 | [10-phase2-spike.md](docs/10-phase2-spike.md) | Live test: can price be derived from raw chain data? |
 | [11-phase2-gate.md](docs/11-phase2-gate.md) | The go/no-go gate: criterion, method, measured result |
+| [INVENTORY.md](docs/INVENTORY.md) | Status of every doc/artifact, and known inconsistencies |
+| [NOTES.md](NOTES.md) | Open blockers, carried state, quantified data loss |
 
 Machine-readable companions:
 

@@ -1,10 +1,17 @@
 # 04 — Data Model
 
 The executable schema is [`schema/001_init.sql`](../schema/001_init.sql): **41 tables, 484 columns,
-106 indexes, 53 foreign keys, 306 check constraints**, organised into 12 sections. It has been applied
-to a real PostgreSQL and exercised with inserts, not merely reviewed.
+106 indexes, 53 foreign keys, 22 explicit CHECK constraints, 5 enums**, organised into 12 sections.
+It has been applied to a real PostgreSQL and exercised with inserts, not merely reviewed.
 
-Counts above are measured (`information_schema`), not estimated.
+Counts above are measured against a live database, not estimated. Re-measured 2026-10-26 on
+PostgreSQL 16.6: tables 41, columns 484, indexes 106, foreign keys 53 — all confirmed.
+
+> **Correction.** This file previously claimed *306 check constraints*. That figure was
+> `information_schema.table_constraints` counting **307** rows of `constraint_type='CHECK'`, of which
+> **285 are PostgreSQL's `_not_null` pseudo-constraints** — one per NOT NULL column. The schema has
+> **22** real CHECK constraints (`pg_constraint where contype='c'` also returns 22). The earlier number
+> was a double-count of NOT NULL columns, not a miscount of checks.
 
 ## Verification status
 

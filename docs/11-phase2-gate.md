@@ -1,7 +1,44 @@
 # 11 — Phase 2 Gate: price derivation from pool reserves
 
-**Status: PASSED on live mainnet, 2026-10-25.** Artifact: [`artifacts/phase2_gate.json`](../artifacts/phase2_gate.json).
+**Status: PASSED on live mainnet, 2026-10-25; re-confirmed on a fresh, untouched pull 2026-10-26.**
+Artifact: [`artifacts/phase2_gate.json`](../artifacts/phase2_gate.json), full run output:
+[`artifacts/phase2_gate_run.txt`](../artifacts/phase2_gate_run.txt).
 Reproduce with `python -m solscope derive --gate --no-db --pairs 20 --tolerance 5 --json artifacts/phase2_gate.json`.
+
+> **Scope: PumpSwap only.** This gate validates reserve-based price and liquidity derivation for
+> **PumpSwap** pools quoted in wSOL/USDC. It says nothing about Raydium AMM v4/CPMM/LaunchLab,
+> pump.fun bonding curves, Orca Whirlpool, Meteora DLMM, Jupiter-routed swaps, or aggregator hops.
+> See §8.
+>
+> **Phase 1b is still blocked** on retrospective anchor input (non-independent anchors; the quality
+> filter passed 44/45 bundled wallets). Phase 2 validating does not unblock it — the two are
+> independent. See `NOTES.md` § `ANCHOR_SELECTION_CRITERIA`.
+
+## 0. Was this criterion tuned to fit the data?
+
+The criterion changed three times while the gate was being built (mean-only → mean + 80% inside;
+exclude pools that moved → exclude pools whose drift exceeds tolerance; and the sample grew as
+discovery improved). That is legitimately a risk of tuning, so the shipped criterion was run once on
+a **fresh pull with no code changes during the run** — `git status` on `solscope/` was empty
+throughout, and the run log is committed as `artifacts/phase2_gate_run.txt`.
+
+The pass does not depend on the criterion changes:
+
+| Criterion | n | Result |
+|---|---|---|
+| **Shipped** (mean ≤5%, ≥80% inside, liquidity ≤5%, movers excluded) | 24 | **PASS** — mean 0.36%, 96% inside 5% |
+| Original mean-only, no exclusions | 27 | **PASS** — mean 1.54% |
+| Shipped thresholds but **no exclusion at all** | 27 | **PASS** — mean 1.54%, 89% inside 5% |
+| Strictest: every pool inside 5%, no exclusion | 27 | **FAIL** — 24/27 (89%) |
+
+The only criterion it fails is the strictest one, which no version of the docs ever specified and
+which is unachievable in principle on a live pool: it requires the pool not to trade while being
+measured. Every criterion the project actually wrote down passes, including the original.
+
+(One caveat for the reader: rows 1 and 3 above differ only in whether the ≥80% sub-rule is applied —
+both use the same 27 pools and the same 1.54% mean. The strictest row fails on `24/27 ≠ 27/27`, not
+on a threshold. Counts here are recomputed from `artifacts/phase2_gate.json`; an earlier draft of this
+section reported 23/27 because the tally was taken over the 24 *measured* pools instead of all 27.)
 
 This is the go/no-go gate from doc 07. Doc 03 §"Phase 2" says: *"for 20 live pairs, locally derived
 price agrees with a contemporaneous DexScreener snapshot within tolerance, and derived liquidity is
@@ -66,20 +103,46 @@ an executed price of **2.42e-7**, a 27% error, because a third pool-owned base v
 the transaction. Enumerating by owner finds all of them; `Deriver.pool_spot_from_tx` is retained only
 as a diagnostic lower bound and is never used for pricing.
 
-### 2.2 `priceNative` is not a mid price
+### 2.2 `priceNative` is a trade price, not a reserve mid — resolved by triangulation
 
-DexScreener's `priceNative` is trade-derived, and on tokens in a dump it sits consistently **above**
-the ratio implied by DexScreener's *own* reported reserves:
+The gate grades against DexScreener's *reported reserves*, which raises the obvious question: how do
+we know those reserves are right? Read them twice, 30 seconds apart, alongside our own chain reads
+and the price of a recent executed swap (`spikes/triangulate.py`, artifact
+[`artifacts/triangulation.json`](../artifacts/triangulation.json)):
+
+| Pool | Instant | Chain reserve ratio | Provider reserve ratio | `priceNative` | Recent executed price |
+|---|---|---|---|---|---|
+| `H2hyLzX9…` (active) | t1 | 6.354e-7 | 6.106e-7 | 7.228e-7 | 7.546e-7 |
+| `H2hyLzX9…` | t2 (+30s) | 6.175e-7 | 6.317e-7 | 7.401e-7 | — |
+| `DXp5zehr…` (halted) | t1 | 2.438e-9 | 2.438e-9 | 2.086e-8 | 2.165e-8 |
+| `9uLRSjzq…` (halted) | t1 | 2.668e-9 | 2.667e-9 | 2.028e-8 | 2.542e-8 |
+
+Three findings, in order of importance:
+
+1. **Chain reserves and provider reserves agree** — identical to four significant figures on the two
+   halted pools and within ~4% on the active one. Our derivation and DexScreener are measuring the
+   same quantity by independent routes, which is what makes the gate a meaningful grade.
+2. **`priceNative` tracks the executed price, not the reserves.** On the active pool it sits 14–20%
+   above *both* reserve ratios at *both* instants while executing trades land within 4% of it.
+   So it is **not stale** — my earlier reading was wrong in kind, not in number. It is a
+   trade-derived price (last trade / short window), while the reserve ratio is a mid. Two different
+   quantities, both live.
+3. **On halted pools the trade-derived number has detached entirely**: `priceNative` is 7.6–8.5× the
+   reserve ratio while both reserve sources agree and neither moves for 30s. Whatever DexScreener's
+   price is doing there, the reserves are the trustworthy pair — a further reason not to grade
+   against `priceNative`.
+
+The consequence for the gate is unchanged and now better founded: **compare reserves against
+reserves.** Earlier, one-instant evidence for the same conclusion:
 
 | Pool | Our reserve ratio | Ratio implied by DexScreener's own reserves | DexScreener `priceNative` |
 |---|---|---|---|
 | `H2hyLzX9…` | 5.3753e-7 | **5.3817e-7** (+0.12%) | 6.179e-7 (**+14.9%**) |
 | `DXp5zehr…` | 7.8715e-7 | **7.7388e-7** (−1.7%) | 8.980e-7 (**+16.0%**) |
 
-Comparing against `priceNative` would have failed the gate on a *definitional* mismatch rather than a
-derivation error — and, worse, would have looked like a 15–25% systematic bias in our own code. The
-gate therefore reconciles reserves against reserves. `priceNative` is carried in the report for
-context only.
+Grading against `priceNative` would have failed the gate on a definitional mismatch and looked like
+a 15–25% systematic bias in our own code. The gate now reports all three numbers (chain reserve,
+provider reserve, executed price when `--sigs` decodes swaps); only the first two are graded.
 
 ### 2.3 Snapshot must be keyed by pair, not by mint
 
@@ -90,27 +153,29 @@ The gate now refuses a non-exact match (`pick_for_pool`) instead of substituting
 
 ## 3. Result
 
-34 pools inspected: **26 measured**, **2 excluded** for moving mid-window, 6 had no row in the
-snapshot for that exact pool and were not substituted.
+**Fresh, untouched pull 2026-10-26** (shipped criterion, no code changes during the run):
+34 pools inspected — **24 measured**, **5 excluded** for moving mid-window, **5 unpriced** (no
+snapshot row for that exact pair; never substituted with a different pool).
 
 | Metric | Value |
 |---|---|
-| Mean absolute price deviation | **0.39%** |
-| Median absolute price deviation | **0.015%** |
-| 90th percentile | **0.82%** |
-| Maximum | **3.81%** |
-| Pools within 0.5% | **22 / 26** |
-| Pools within 1% | **23 / 26** |
-| Pools within 5% | **26 / 26 (100%)** |
-| Mean absolute liquidity deviation | **0.05%** |
-| Liquidity pools within 5% | **25 / 25** |
-| Pool drift on measured pools (median / p90 / max) | **0.04% / 1.0% / 2.6%** |
-| Verdict | **PASS** — `26 pools measured; price mean 0.39% max 3.81%; 0/26 outside 5.0%; 2 excluded; liquidity mean 0.05%` |
+| Mean absolute price deviation | **0.36%** |
+| Median absolute price deviation | **0.007%** |
+| 90th percentile | **0.71%** |
+| Maximum | **5.42%** |
+| Pools within 5% | **23 / 24 (96%)** — requirement 80% |
+| Mean absolute liquidity deviation | **0.04%** (26/26 inside 5%) |
+| Verdict | **PASS** — `24 pools measured; price mean 0.36% max 5.42%; 1/24 outside 5.0% (96% pass); 5 excluded (traded mid-window); liquidity mean 0.04%` |
 
-The two excluded pools had drifted **9.1%** and **24.3%** during the measurement window — the second
-had already lost its snapshot row entirely. Neither is a derivation result; both are pools that
-moved while being looked at, and excluding them is the only honest option because there is no single
-instant their reserves describe.
+The five excluded pools had drifted **7.0%, 12.4%, 12.6%, 35.8% and 53.2%** across the measurement
+window. None of those is a derivation result: they are pools that moved while being looked at, and
+there is no single instant their reserves describe. The five unpriced rows are pools DexScreener
+returned no exact pair row for; substituting the deepest pool for the mint would have manufactured a
+comparison, so the gate reports them as unmeasured instead.
+
+**Previous run, 2026-10-25** (same criterion): 26 measured, 2 excluded, 6 unpriced, mean **0.39%**,
+median 0.015%, max **3.81%**, 26/26 inside 5%, liquidity mean 0.05%. Also PASS. Both runs are
+evidence for the same claim; the 2026-10-26 run is the one this document grades.
 
 **Why the drift rule exists.** Runs before the two reads produced between **1 and 4 pools outside 5%
 per run**, with individual outliers as large as 17.1%, while the mean stayed under 1.6% every time.
@@ -124,11 +189,11 @@ That is a plausible physical explanation, but "the outlier is probably lag" is n
 the gate now *detects* the movement instead of arguing about it. The `skew_signature` and `~lag` /
 `~moved` markers remain in the report for anyone re-reading the data.
 
-**Run-to-run behaviour.** Mean deviation across runs was 0.66%, 1.33%, 0.67% and 1.58% before the
-change — the spread tracking how many pools happened to trade during each run, not the accuracy of
+**Run-to-run behaviour.** Mean deviation across the four pre-drift runs was 0.66%, 1.33%, 0.67% and
+1.58% — the spread tracking how many pools happened to trade during each run, not the accuracy of
 the derivation. After bracketing the snapshot with two reads the measured set is stable by
-construction (median drift 0.04%, i.e. at the noise floor) and the tail is gone: 100% inside 5%,
-maximum 3.81%.
+construction: run A (2026-10-25) gave mean 0.39% with 100% inside 5%, run B (2026-10-26, the grade
+run) mean 0.36% with 96% inside 5% and a single 5.42% outlier. Both pass; the tail stays near zero.
 
 ## 4. Defects found and fixed on the way here
 
@@ -174,16 +239,55 @@ breakdown before trusting a projection built on it.
 - **No per-trade validation at scale.** Live pools are dominated by aggregator-routed swaps where the
   instruction's "trader" is a routing program, not a wallet; the direct-swap fixtures prove the
   decoder, not the throughput. Attribution of routed swaps to wallets is Phase 3/4 work.
-- **Residual error is dominated by observation lag, not method.** Median 0.012% is at the noise floor
-  of two reads taken seconds apart; the tail is where volatility lives.
+- **Residual error is dominated by observation lag, not method.** Median deviation (0.007% on the
+  grade run) is at the noise floor of two reads taken seconds apart; the tail is where volatility
+  and mid-window trading live.
 
 ## 7. Verdict
 
-**Continue.** Price and liquidity can be derived from free chain data within **0.39% mean** (median
-0.015%) and **0.05% mean liquidity** error across 26 live pools, with **every** measured pool
-individually inside 5% and a maximum of 3.81%.
+**Continue — for PumpSwap.** On a fresh, untouched pull (2026-10-26) price deviates **0.36% mean**
+(median 0.007%) from an independent reserve measurement across **24** live pools, **96% inside 5%**
+(maximum 5.42%), with **0.04% mean liquidity** deviation. It also passes under the project's original
+mean-only criterion and with no exclusion rule at all (§0), so the pass is not an artefact of the
+criterion being adjusted mid-run.
 
 Doc 07's stop condition — "if this fails after honest effort, stop and reassess" — is not triggered.
 The next dependency is no longer a spreadsheet question but accumulated data: Phase 3 (positions and
 P&L) can start on the collector's archive, and the early-entry metrics in Phase 5 need the
 point-in-time series that only forward collection produces.
+
+## 8. Coverage: what is and is not inside this gate
+
+"Phase 2 complete" here means **Phase 2 complete for PumpSwap**, nothing wider.
+
+| Component | PumpSwap | Raydium AMM v4 / CPMM / LaunchLab | pump.fun bonding curve | Orca Whirlpool | Meteora DLMM | Jupiter / aggregator routing |
+|---|---|---|---|---|---|---|
+| Swap **decoder** (locate instruction, attribute trade) | **verified** | registry entries exist; **not** validated on live fixtures | registry exists (`buy`/`sell`, v2, v3); **not** validated | **explicitly not decoded** (abstains) | **explicitly not decoded** (abstains) | **partial** — inner swaps found, but the instruction's "trader" can be a routing program, so wallet attribution is unproven |
+| **Reserve** / price / liquidity derivation | **gate-verified** | **no** — vaults live under a separate authority PDA, so owner-enumeration returns nothing | **no** — curve PDA owns the vaults | **no** | **no** | n/a (route hops are not separately priced) |
+
+**Do the remaining DEXes block Phases 3–9?**
+
+- **Phases 3–6 (positions, discovery, metrics, scoring): no.** They can be built, tested and
+  calibrated against PumpSwap-only data, which is the migrated memecoin market this project targets.
+  Work must record *coverage per wallet* so a wallet that mostly trades Raydium is not silently
+  scored on a fraction of its history — that is an accounting field, not a blocker.
+- **Phase 9 (validation): yes, full coverage is required before any ranking claim.** Scoring wallets
+  on incomplete history biases every per-wallet rate: activity looks lower, win rate can look higher
+  or lower depending on where the missing trades sit. A coverage caveat that is acceptable while
+  *building* the model is not acceptable when deciding whether the model works.
+- **Aggregator routing is the harder gap** and is not solved by resolving authority PDAs: it needs
+  hop-by-hop attribution so a wallet trading through Jupiter is credited with its own trade.
+
+Estimate of what remains: resolve authority PDAs for Raydium AMM v4/CPMM/LaunchLab and the pump.fun
+curve (schema-independent work, one fixture per family), then Orca/Meteora layouts, then routing
+attribution. None of it is speculative — each is a known account layout — but none of it is done.
+
+## 9. Open blocker, unrelated to this gate
+
+**Phase 1b (retrospective anchor discovery) is still blocked** on non-independent anchors and a
+quality filter that passed 44 of 45 known-bundled wallets (`NOTES.md` § `ANCHOR_SELECTION_CRITERIA`).
+
+The two are independent. This gate validates reserve-based *price derivation*; it says nothing about
+whether seed anchors are independent or whether the quality filter discriminates. **Phase 2 passing
+does not unblock Phase 1b**, and no Phase 4 discovery result should be trusted while that blocker is
+open.

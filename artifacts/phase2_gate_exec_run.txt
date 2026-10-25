@@ -1,0 +1,63 @@
+gate: discovered 33 live pools keyless (no registry available)
+gate: 33 pools reserved twice around the snapshot, 30 snapshot rows for 33 mints
+skip: 5aeZa1MqZWu3: pumpswap/buy_exact_quote_in_v2: quote leg settled nowhere (no token delta, no lamport delta)
+skip: u26uYWB2g58u: pumpswap/buy_exact_quote_in_v2: zero executed amount
+skip: XoTL9CTzr8tK: pumpswap/sell: quote leg settled nowhere (no token delta, no lamport delta)
+skip: 56i1tUHNHCuR: pumpswap/sell: quote leg settled nowhere (no token delta, no lamport delta)
+skip: 5j4KcL7aaiAg: pumpswap/buy_exact_quote_in: quote leg settled nowhere (no token delta, no lamport delta)
+skip: C35JJYVez3oH: pumpswap/buy_exact_quote_in_v2: quote leg settled nowhere (no token delta, no lamport delta)
+skip: 3gpBg2zf3V7X: pumpswap/buy_exact_quote_in_v2: quote leg settled nowhere (no token delta, no lamport delta)
+skip: 385pNL6o7KAZ: pumpswap/buy_exact_quote_in: quote leg settled nowhere (no token delta, no lamport delta)
+skip: 3TpQGeB63p8B: pumpswap/buy_exact_quote_in_v2: quote leg settled nowhere (no token delta, no lamport delta)
+skip: 3iehGa2WKUCN: pumpswap/buy_v2: quote leg settled nowhere (no token delta, no lamport delta)
+skip: kf25wzmvk2BY: pumpswap/sell: quote leg settled nowhere (no token delta, no lamport delta)
+skip: 259VPNzVwWU8: pumpswap/sell_v2: quote leg settled nowhere (no token delta, no lamport delta)
+skip: 29S8kF2ipepZ: pumpswap/sell: trader swapped same pool twice in one tx — attribution ambiguous
+skip: 29S8kF2ipepZ: pumpswap/buy: trader swapped same pool twice in one tx — attribution ambiguous
+skip: 2jrVbjwtdvCq: pumpswap/sell: zero executed amount
+skip: MPK7SNC73Lgm: pumpswap/sell: trader swapped same pool twice in one tx — attribution ambiguous
+skip: MPK7SNC73Lgm: pumpswap/buy: trader swapped same pool twice in one tx — attribution ambiguous
+skip: Sci2baBUT9Tr: pumpswap/sell: trader swapped same pool twice in one tx — attribution ambiguous
+skip: Sci2baBUT9Tr: pumpswap/buy: trader swapped same pool twice in one tx — attribution ambiguous
+skip: 2c74N3Kb9QHZ: pumpswap/sell: trader swapped same pool twice in one tx — attribution ambiguous
+      pool   n     chain px      snap px      exec px    dev%   base%  quote%    liq%  note
+-------------------------------------------------------------------------------------------
+hHS8LyrqJY   8    1.060e-05    1.083e-05    1.109e-05   -2.11   +1.05   -1.08   -0.03   ~lag
+AHPJjd3MAq   7    7.217e-07    7.873e-07    8.606e-07   -8.33   +4.14   -4.53   +0.06   ~lag
+oBDsn8V8GP   8    1.096e-04    1.097e-04    1.113e-04   -0.09   +0.04   -0.04   -0.02   ~lag
+92LeodJDbW   8    3.335e-03    3.337e-03    3.353e-03   -0.06   +0.03   -0.03   -0.00   ~lag
+zxExkX9AhR   1    1.051e-08    1.052e-08    3.603e-08   -0.04   +0.00   -0.04   -0.03   ~lag
+TgyiHDq9Gg   8    6.276e-03    6.276e-03    6.305e-03   -0.01   +0.01   +0.00   -0.01  
+Wa1pknRQo4   8    3.552e-03    3.553e-03    3.571e-03   -0.02   +0.01   -0.01   -0.01   ~lag
+DFmNEVMXcr   8    3.018e-03    3.020e-03    3.034e-03   -0.05   +0.02   -0.02   -0.03   ~lag
+CRhhUe3LaY   8    6.500e-03    6.500e-03    6.530e-03   -0.01   +0.01   +0.00   -0.00  
+sDkwX4L3DM   8    2.405e-03    2.405e-03    2.418e-03   -0.03   +0.01   -0.01   +0.01   ~lag
+yKJ5LT8Rje   4    7.636e-09    7.557e-09    3.311e-09   +1.04   -0.21   +0.83   -0.02   ~lag
+kgPqtWsm1n   3    4.365e-07    4.352e-07    5.257e-07   +0.30   -0.14   +0.16   -0.00   ~lag
+4XFXNN4SH4   0    1.985e-07            -            -       -       -       -       -  pool absent from snapshot; a different pool for this mint was not substituted
+7oGzsrxit2   0    2.108e-07            -            -       -       -       -       -  pool absent from snapshot; a different pool for this mint was not substituted
+bVJAcorKFJ   8    2.320e-03    2.321e-03    2.334e-03   -0.02   +0.01   -0.01   +0.01   ~lag
+J5xfM1k75M   3    3.850e-06    3.834e-06    4.019e-06   +0.42   -0.21   +0.21   -0.01   ~lag
+gHkE1XktDZ   2    8.584e-06    8.588e-06    9.062e-06   -0.05   +0.03   -0.03   -0.01   ~lag
+TKr37u5RbM   8    8.109e-06    8.106e-06    8.568e-06   +0.03   -0.02   +0.02   +0.00   ~lag
+o8J3ELR4cG   3    9.010e-06    9.034e-06    9.250e-06   -0.27   +0.13   -0.14   -0.01   ~lag
+FJxr2KaMhD   1    1.811e-06    2.242e-06    1.903e-06  -19.23  +11.46   -9.97   +0.94  pool moved 12.9% during the window — excluded ~moved
+1v4zzAejf2   8    3.084e-06    3.283e-06    3.821e-06   -6.08   +3.07   -3.20   +0.07  pool moved 9.1% during the window — excluded ~moved
+tzwy19XWaQ   0    4.369e-06            -            -       -       -       -       -  pool absent from snapshot; a different pool for this mint was not substituted
+3jmLZiaLRe   8    4.838e-03    4.839e-03    4.862e-03   -0.02   +0.01   -0.01   +0.00   ~lag
+FfGsL4ftCG   2    7.530e-06    7.530e-06    7.751e-06   +0.00   -0.00   +0.00   -0.01   ~lag
+tgUhGL6YYF   1    4.001e-02    4.001e-02    9.120e+03   +0.00   +0.00   +0.00       -  
+RBwLtnoirf   1    6.655e-07    6.813e-07    7.860e-07   -2.32   +1.04   -1.30   -0.04   ~lag
+6EJuVyc16x   8    3.156e-05    3.158e-05    3.255e-05   -0.06   +0.03   -0.03   -0.00   ~lag
+RjDxU52zKa   8    2.224e-06    2.163e-06    2.406e-06   +2.81   -1.15   +1.63   +0.15  pool moved 21.0% during the window — excluded ~moved
+EugSGwXgTU   6    7.490e-08    1.055e-07    1.199e-07  -29.00  +14.52  -18.70   -0.87  pool moved 10.8% during the window — excluded ~moved
+zVCYyRXKun   0    6.931e-07    6.499e-07            -   +6.66   -2.88   +3.58   -0.00   ~lag
+EUbYCFW6bd   7    8.109e-08            -    1.307e-07       -       -       -       -  
+j9a8PNHfWd   6    9.032e-09            -    3.373e-08       -       -       -       -  
+59ZGmVubX6   8    1.847e-08            -    4.580e-08       -       -       -       -  
+
+priced pools: 23 (required 20)   excluded: 4
+price |dev| mean 0.95%  max 8.33%  tolerance 5.0%
+liquidity: 26/26 within tolerance, mean |dev| 0.09%
+GATE PASS: 23 pools measured; price mean 0.95% max 8.33%; 2/23 pools outside 5.0% (91% pass, need 80%); 4 excluded (traded mid-window); liquidity mean 0.09%
+wrote artifacts/phase2_gate_exec.json

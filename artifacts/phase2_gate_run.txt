@@ -1,0 +1,44 @@
+gate: discovered 34 live pools keyless (no registry available)
+gate: 34 pools reserved twice around the snapshot, 30 snapshot rows for 34 mints
+      pool   n     chain px      snap px    dev%   base%  quote%    liq%  note
+------------------------------------------------------------------------------
+hHS8LyrqJY   0    1.056e-05    1.058e-05   -0.18   +0.09   -0.09   -0.06   ~lag
+AHPJjd3MAq   0    8.017e-07    8.030e-07   -0.17   +0.08   -0.09   -0.00   ~lag
+oBDsn8V8GP   0    1.086e-04    1.086e-04   -0.01   +0.00   -0.01   -0.05   ~lag
+92LeodJDbW   0    3.304e-03    3.304e-03   -0.00   +0.00   -0.00   -0.01   ~lag
+zxExkX9AhR   0    1.051e-08    1.052e-08   -0.04   +0.00   -0.04   -0.03   ~lag
+yKJ5LT8Rje   0    8.605e-06    8.605e-06   -0.00   +0.00   -0.00   -0.00   ~lag
+TgyiHDq9Gg   0    6.266e-03    6.265e-03   +0.01   +0.00   +0.01   -0.01  
+Wa1pknRQo4   0    3.545e-03    3.545e-03   -0.00   +0.00   -0.00   -0.00   ~lag
+DFmNEVMXcr   0    3.006e-03    3.006e-03   -0.00   +0.00   -0.00   -0.01   ~lag
+CRhhUe3LaY   0    6.477e-03    6.476e-03   +0.01   -0.00   +0.01   +0.00   ~lag
+sDkwX4L3DM   0    2.393e-03    2.393e-03   +0.00   -0.00   +0.00   -0.02   ~lag
+kgPqtWsm1n   0    5.050e-07    5.050e-07   +0.00   +0.00   +0.00   -0.02  
+4XFXNN4SH4   0    1.972e-07            -       -       -       -       -  pool absent from snapshot; a different pool for this mint was not substituted
+7oGzsrxit2   0    2.062e-07            -       -       -       -       -  pool absent from snapshot; a different pool for this mint was not substituted
+bVJAcorKFJ   0    2.312e-03    2.312e-03   +0.00   -0.00   +0.00   -0.01   ~lag
+i3FgxRaCm6   0    1.467e-05    1.463e-05   +0.28   -0.16   +0.11   -0.04   ~lag
+J5xfM1k75M   0    3.928e-06    3.928e-06   +0.00   +0.00   +0.00   -0.01  
+TKr37u5RbM   0    8.027e-06    8.027e-06   +0.00   +0.00   +0.00   +0.00  
+gHkE1XktDZ   0    8.519e-06    8.517e-06   +0.02   -0.01   +0.01   -0.00   ~lag
+o8J3ELR4cG   0    9.128e-06    9.064e-06   +0.71   -0.34   +0.36   +0.00   ~lag
+tzwy19XWaQ   0    4.369e-06            -       -       -       -       -  pool absent from snapshot; a different pool for this mint was not substituted
+1v4zzAejf2   0    4.978e-06    4.887e-06   +1.87   -0.89   +0.96   -0.01   ~lag
+FfGsL4ftCG   0    7.558e-06    7.558e-06   -0.00   +0.00   +0.00   -0.01  
+tgUhGL6YYF   0    4.001e-02    4.001e-02   +0.00   +0.00   +0.00       -  
+3jmLZiaLRe   0    4.794e-03    4.793e-03   +0.01   -0.01   +0.01   +0.00   ~lag
+6EJuVyc16x   0    3.120e-05    3.120e-05   +0.01   -0.00   +0.00   +0.00   ~lag
+w3R6EZm3RE   0    1.031e-07    1.090e-07   -5.42   +3.35   -2.25   +0.43   ~lag
+cktx9XALjc   0    1.418e-07    1.408e-07   +0.75   -0.43   +0.32   -0.08  pool moved 12.4% during the window — excluded ~moved
+EUbYCFW6bd   0    4.568e-07    4.826e-07   -5.34   +2.89   -2.61   +0.17  pool moved 7.0% during the window — excluded ~moved
+j9a8PNHfWd   0    6.809e-08    5.376e-08  +26.66   -8.33  +16.11   -0.17  pool moved 35.8% during the window — excluded ~moved
+59ZGmVubX6   0    4.286e-08            -       -       -       -       -  pool moved 53.2% during the window — excluded ~moved
+RBwLtnoirf   0    4.988e-07            -       -       -       -       -  pool moved 12.6% during the window — excluded ~moved
+uuMSjTcVjf   0    6.207e-07            -       -       -       -       -  
+wP3arQ9UBw   0    4.336e-07            -       -       -       -       -  
+
+priced pools: 24 (required 20)   excluded: 5
+price |dev| mean 0.36%  max 5.42%  tolerance 5.0%
+liquidity: 26/26 within tolerance, mean |dev| 0.04%
+GATE PASS: 24 pools measured; price mean 0.36% max 5.42%; 1/24 pools outside 5.0% (96% pass, need 80%); 5 excluded (traded mid-window); liquidity mean 0.04%
+wrote artifacts/phase2_gate.json

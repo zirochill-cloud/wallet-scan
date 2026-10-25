@@ -76,9 +76,16 @@ def main() -> int:
         cur.execute(f"DROP DATABASE IF EXISTS {dbname}")
         cur.execute(f"CREATE DATABASE {dbname}")
 
+    # Split admin from target: the DSN names the admin database, but every
+    # assertion must run inside the scratch database we just created. With a
+    # conninfo DSN the previous code skipped the dbname override entirely and
+    # migrated `postgres` instead — found 2026-10-26 on a real server.
     target = dict(conninfo)
-    if "conninfo" not in target:
-        target["dbname"] = dbname
+    dsn_text = target.pop("conninfo", None)
+    if dsn_text:
+        from psycopg.conninfo import conninfo_to_dict
+        target = conninfo_to_dict(dsn_text) or {}
+    target["dbname"] = dbname
 
     with psycopg.connect(**target) as conn:
         # 1. The migration runner must apply the real schema cleanly.

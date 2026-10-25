@@ -22,6 +22,9 @@ spikes/cache2/
 # Local Postgres cluster (workspace-persistent replacement for /tmp/pgdata)
 .pgdata/
 
+# Portable Windows PostgreSQL binaries (516 MB, re-downloadable)
+.pgtools/
+
 # Collected raw data (large + re-fetchable by design) and local run logs
 data/
 data-*.log
