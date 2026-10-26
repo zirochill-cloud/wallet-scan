@@ -154,3 +154,137 @@ file. Verified: `git status` clean after each, no partial writes found.
 After any `Invalid parameters` error, re-verify `git status` before the next tool
 call. Since the remote now exists, `git status` + a pushed baseline is the cheap
 recovery path rather than hope.
+
+---
+
+## § PHASE1A_AUDIT
+
+*Status: audit run 2026-10-26, against the working tree at `df8579a`. Verdict:
+**Scenario A — `solscope/` is a rewrite, not a continuation.***
+
+The question this settles: the closeout claimed ~1,510 `swap_events` and ~497
+`wallet_token_positions` existed in Phase 1a. Data loss leaves DDL behind with zero
+rows. So if those table names are absent from DDL, code, tests, and every live DB,
+the Phase 1a *architecture* is absent — not just its rows.
+
+### Evidence
+
+**A1 — modules.** 17 Python modules under `solscope/` (2,977 lines). Every one has
+exactly **one** commit (`derive.py` two — both from this session). `git log --all`
+holds **3 commits total**; the root is `00438e6`, created this session. There is no
+history before it, so nothing was renamed or moved within git.
+
+**A2 — the six table names.** Checked across DDL, code, tests, docs, `spikes/`, and
+the live DBs:
+
+| Identifier | Occurrences outside `docs/INVENTORY.md` |
+|---|---|
+| `swap_events` | **0** |
+| `wallet_token_positions` | **0** |
+| `swap_hops` | **0** |
+| `pool_cache` | **0** |
+| `pool_candidates` | **0** (only the *Python* `PoolCandidate` dataclass exists) |
+| `mint_pools` | **0** |
+| `wallet_quality_filter` | **0** anywhere, including `INVENTORY.md` |
+
+`docs/INVENTORY.md` is the only file in the repo containing those names — and I
+wrote it this session. The negative finding therefore rests on a fresh grep
+(re-run for this audit), not on the doc that reports it.
+
+**A3 — schema provenance.** `schema/001_init.sql` was added in `00438e6`, the root
+commit. No earlier commit touches it. It references none of the six identifiers.
+
+**A4 — framing.** README and every module docstring describe the system as
+**Phase 0/1/2**, citing doc 07. Nothing says "rewrite", "continuation", or
+"building on Phase 1a". Doc 07 defines **Phase 1 = "Forward collector … start on
+day one"** and justifies it with the project's core premise: *complete history is
+unaffordable, so forward collection is the primary asset*. A retrospective anchor
+phase contradicts that premise, so its absence is **by design, not an omission**.
+The repo's own phase list has no 1a/1b rows; the 1b blocker entered only as carried
+state (see § ANCHOR_SELECTION_CRITERIA).
+
+**A2 further — what the phase tests actually pass.**
+
+| Suite | Lines | Subject | Helius | Phase 1a refs |
+|---|---:|---|---|---|
+| `test_phase0` | 278 | CLI parser registration; `budget.yaml` validation; ledger cap/idempotency/preflight | only as a **config name** (cap 1,000,000; `get_transaction` = 1) | none |
+| `test_phase1` | 660 | Pool filter, token bucket, archive dedupe, checkpoint overlap, WSS metering, kill-recovery resume, collector tick idempotency | imports `LaserStream`; asserts websocket op costs | none |
+| `test_phase2` | 431 | Decoder + derivation against 12 real mainnet fixtures | only as **fixture provenance** | none |
+
+All three run **offline** against fakes and fixtures. "Phases 0–2 pass" means the
+CLI/ledger contract, the forward-collector contracts, and the PumpSwap
+decoder/gate contract — none of it exercises a wallet-history path.
+
+### Verdict: Scenario A — rewrite
+
+1. No history before the root commit; every file written once.
+2. Six identifiers absent from DDL, code, tests, docs and live DBs.
+3. Schema was authored complete at the root commit. The *equivalent concepts* exist
+   under new names but are **not** renames:
+
+   | Prior Phase 1a | Current equivalent | Same thing? |
+   |---|---|---|
+   | `swap_events` | `swaps` (+ `transactions`) | different design: split tables, `exec_price` vs `pool_price` |
+   | `wallet_token_positions` | `positions` | different design: partial unique index, `inventory_origin` |
+   | `swap_hops` | *no table* | multi-hop lives in prose ("aggregator hops") and in `decode.py`'s inner-instruction flattening — a different mechanism |
+   | `mint_pools` | `pools` | different design |
+   | `pool_cache` | `pool_reserve_snapshots` | different design |
+   | `wallet_quality_filter` | *nothing* | absent in every form |
+
+   Whether those are ports or independent redesigns is **unknowable**: no history
+   survived, and the designs differ in ways the prior names say nothing about.
+4. There is no wallet-history extractor, no anchor selector, no quality filter, and
+   no per-wallet position builder. `positions` is Phase 3 and unwritten.
+   `solscope discover` is a registered CLI **stub** returning exit 2.
+
+### Caveats — three real capabilities survive
+
+Not a clean "nothing survived". A Phase 1a rebuild starts from these, not from zero:
+
+- `solscope/adapters/helius.py` implements exactly the three RPC primitives a
+  retrospective extraction needs — `getSignaturesForAddress`,
+  `getTokenAccountsByOwner`, `getTransaction` — each credit-metered and
+  cap-checked. (Note: `getTokenAccountsByOwner`'s credit cost is still an
+  **unverified conservative assumption of 10**.)
+- `derive.py` already runs pool → signatures → transactions → archive → persist.
+  That is the mechanical core of a historical extraction; it differs from Phase 1a
+  only in **seed** (pool address rather than wallet/launch) and **destination**
+  tables.
+- `decode.py` decodes real swaps, so the hard part of Phase 1a's data layer was
+  solved under a different name.
+
+### Surviving on-chain payloads (the only real data in the tree)
+
+- `tests/fixtures/` — **12** `getTransaction` payloads fetched live from Helius on
+  **2026-10-17**, i.e. inside the prior observation window. Real Phase 1a-era residue.
+- `data/raw/tx/2026-10-25/` — **372** archived `getTransaction` payloads, 372 distinct
+  sha256, 6.5 MB, written **2026-10-26 00:12–00:29 local** (UTC date rolls back to
+  10-25). These are from *this* session's `derive` runs, **not** prior-session
+  Phase 1a collection. `data/` is gitignored and 0 files are tracked.
+- No collector day-directories and no `gaps/` directory exist: the forward collector
+  never archived to disk in this tree. The 165.8 MB raw archive in § DATA_LOSS_2026_10
+  lived in the lost cloud VM and is not here.
+
+### Implication for Phase 1b
+
+**Large** (this is Scenario A). Phase 1b cannot "consume anchors" — there is no
+anchor pipeline to consume them, no `swap_events`/`wallet_token_positions` to read,
+and no quality filter whose rejection rate could be measured. A Phase 1b build means:
+(H)elium wallet-history adapter = reuse `helius.py`; (S)wap/position storage =
+reuse `swaps`/`positions`, which already carry the two-clocks and
+`inventory_origin` invariants; (M)int-based route and (Q)uality filter = **greenfield**;
+(A)nchor pipeline = **greenfield**. The `NOTES.md` § `ANCHOR_SELECTION_CRITERIA`
+blocker still applies unchanged to the greenfield parts.
+
+### Corrections to earlier reporting this session
+
+- "Doc 11 references `swap_hops`" — **wrong**. Doc 11 says "aggregator hops" in
+  prose; the literal identifier appears only in `docs/INVENTORY.md`.
+- "No Phase 1a text exists anywhere in the repo" — true when measured, but
+  `INVENTORY.md` (written after) is now the sole place "Phase 1a" appears. The
+  substantive claim — no Phase 1a *artifacts* — is what the greps above establish.
+- `docs/INVENTORY.md` § "Why 41 is more than Phases 0–2 should produce" **misattributes
+  the Phase 1a tables** to `chains`/`tokens`/`pools`/`raw_payloads`. Per this audit the
+  Phase 1a tables do not exist at all; that section's phase attribution describes the
+  *current* schema's writers (correct) but must not be read as evidence Phase 1a was
+  implemented here. Flagged, not yet edited.

@@ -125,8 +125,13 @@ phase will write them, not because anything did. Phase 0–2 code touches only *
 
 - **Phase 0 (ops):** `credit_ledger`, `job_runs`, `job_checkpoints`, `ingestion_queue`,
   `stream_subscriptions` (5)
-- **Phase 1a (collection):** `chains`, `tokens`, `token_supply_events`, `pools`,
-  `pool_reserve_snapshots`, `pool_snapshots`, `raw_payloads` (7)
+- **Phase 1 (forward collection, implemented in this repo):** `chains`, `tokens`, `token_supply_events`,
+  `pools`, `pool_reserve_snapshots`, `pool_snapshots`, `raw_payloads` (7)
+  
+  > **Do not misread this as "Phase 1a was implemented here."** Per the audit in `NOTES.md`
+  > § `PHASE1A_AUDIT`, the prior sessions' Phase 1a architecture is **absent from this repo in every
+  > form** — its tables do not exist in the DDL, and `solscope/` is a rewrite. The label above is the
+  > *current* schema's forward-collection writer set, which is the only Phase 1 that exists here.
 - **Phase 2 (decode):** `transactions`, `swaps`, `token_transfers`, plus reads of `pools`/`tokens`
   (3 writers)
 - **Shared:** `wallets` (registered by both 1b discovery and Phase 2 decode)
@@ -183,6 +188,13 @@ never entered `001_init.sql`). Therefore:
    re-verified* because no artifact supporting them survived either.
 6. **`docs/10` vs `docs/11` method.** Doc 10 reconciles a sampled trade against `priceNative`; doc 11
    reconciles reserves against reserves. Doc 10 is historical and cross-linked, not wrong.
+7. **`solscope/` is a rewrite, and the Phase 1a architecture is absent.** The prior sessions'
+   `swap_events` / `wallet_token_positions` / `swap_hops` / `pool_cache` / `pool_candidates` /
+   `mint_pools` exist in **no** DDL, code, test, or live DB — and `wallet_quality_filter` appears
+   nowhere at all. Therefore the earlier "Phase 1a complete" claim applies to **code that is not
+   here**, and Phase 1b has no anchor pipeline or quality filter to build on. Full evidence:
+   `NOTES.md` § `PHASE1A_AUDIT`. *Open — this supersedes any reading of this file that implies
+   Phase 1a artifacts are merely empty.*
 
 ## What is *not* covered by anything in this repo yet
 
