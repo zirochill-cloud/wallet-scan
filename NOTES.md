@@ -94,3 +94,63 @@ that is a budget decision rather than a wall.
 
 **Verdict: footnote.** Nothing derived was lost, backfill is affordable, and the only
 genuinely lost artefact (raw wire bytes) has a signed equivalent.
+
+### Addresses supplied at closeout (2026-10-26)
+
+Carried verbatim from the closeout message — user-supplied, not recoverable from any
+artifact in this repo, and **not yet classified** (wallet vs mint) beyond the four
+whose vanity suffix marks them as pump.fun mints:
+
+```
+GB68eELgf864nrQHjNvrXHF6Xywpp1kYsb7fsGBupump   (pump.fun mint)
+zj1jpp7QMveWHLs61vL9KMZf254KvW7j4AAmBF8ry2k    (unclassified)
+EVgwa5CHBVwk6sCTa4QJrVXYBKngZhYqh2a2ZGDApump   (pump.fun mint)
+7Y7V1a4m2nWK7BMgbka5B4vR1pDvCK7yva3Hnrqkraze   (unclassified)
+91ryaCo5yGpYZM3bs6GUPs97VWJQj7RozBmqPULgpump   (pump.fun mint)
+```
+
+If these are the lost Phase 1a seeds, they are the only surviving record of that set.
+
+---
+
+## § PROCESS_FAILURES
+
+**2026-10-26: Third data-loss event.** Git history did not survive the cloud VM →
+desktop move. Prior commits are gone; `1944c74` is the new baseline. The code
+survived as files on disk; the history is lost. This is the third incident of the
+same class (git restore on NOTES.md, 2026-10-18; VM → desktop move, 2026-10-26;
+git history lost, same event but separate consequence). Mitigation going forward:
+(a) git remote (GitHub, GitLab, or self-hosted) configured before any further work;
+(b) nightly DB export to `data/exports/` (gitignored, and shipped to the remote as
+a release asset if the DB matters); (c) NOTES.md and INVENTORY.md regenerated from
+session log after each loss. The pattern is not the loss, it is the discovery of
+the loss after further work was done. `git push` costs nothing and eliminates it.
+
+*Status: mitigation (a) executed 2026-10-26 — `origin` =
+`https://github.com/codebrokee/solscope.git` (private), `master` pushed at
+`1944c74` and verified with `git ls-remote`. Mitigations (b) and (c) are
+procedural and not yet automated.*
+
+---
+
+## § ANTI_PATTERNS
+
+**Harness instability: malformed tool calls (2026-10-26).** Five structurally
+invalid calls were observed in one session. In every case a required field was
+dropped or renamed at serialization time — the call arrived without it:
+
+| # | Tool | Defective args | Error message (verbatim prefix) |
+|---|---|---|---|
+| 1 | `str_replace` on `solscope/derive.py` | top-level `newString` instead of a `replacements` array | `Invalid parameters for str_replace: expected "array", path ["replacements"], message: "Invalid input: expected array, received undefined"` |
+| 2 | `str_replace` on `solscope/derive.py` | same defect, repeated | same as #1 |
+| 3 | `str_replace` on `requirements-dev.txt` | `replacements[0].oldString` missing | `Missing required replacement fields: - replacements[0].oldString. If the intent is deletion, set "newString": "" explicitly.` |
+| 4 | `write_file` on `NOTES.md` | `instructions` missing | `expected "string", path ["instructions"], message: "Invalid input: expected string, received undefined"` |
+| 5 | `suggest_prompts` | passed `{"ppts": "[]"}` instead of `{"prompts": []}` | `expected "array", path ["prompts"], message: "Invalid input: expected array, received undefined"` |
+
+All five were rejected by schema validation **before execution** — none modified a
+file. Verified: `git status` clean after each, no partial writes found.
+
+**Rule:** a malformed call may not have corrupted state, but the next one may.
+After any `Invalid parameters` error, re-verify `git status` before the next tool
+call. Since the remote now exists, `git status` + a pushed baseline is the cheap
+recovery path rather than hope.
