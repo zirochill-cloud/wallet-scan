@@ -1,9 +1,11 @@
 """Phase 1b early-entry metric definitions (docs/PHASE1A_RECOVERY.md §5).
 
-**Signatures and contracts only. The bodies are not implemented yet** — this module
-fixes the definitions so that the scorer, the reports and the tests can be written
-against a stable interface, and so that "we agreed the definition" is a fact in the
-repo rather than a claim in a chat message.
+**Implemented, with every threshold mirrored in config/scoring.yaml** — this module
+is where the definitions live, so the scorer, the reports and the tests are all
+written against the same code, and "we agreed the definition" is a fact in the repo
+rather than a claim in a chat message. The tests
+(`tests/test_phase1b_metrics.py`) assert hand-computed expected values, not
+non-None results.
 
 Scope: the three *weighted* inputs of the Phase 1b early-entry score, plus the two
 diagnostics that the scoring config retains at weight 0.00.
@@ -37,12 +39,14 @@ Two traps this module exists to prevent:
 from __future__ import annotations
 
 import datetime as _dt
+import statistics
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Sequence
 
 __all__ = [
     "INSUFFICIENT_WINDOW",
+    "NO_OBSERVATIONS",
     "PriceObservation",
     "BuyerFirstSeen",
     "HourlyVolume",
@@ -60,6 +64,13 @@ __all__ = [
 #: A window is NEVER imputed or shortened: a truncated window silently compares
 #: different horizons across wallets.
 INSUFFICIENT_WINDOW = "INSUFFICIENT_WINDOW"
+
+#: A *mature* window that held no usable price observation. Deliberately a
+#: separate status: INSUFFICIENT_WINDOW says time has not passed yet (a fact
+#: about the data), NO_OBSERVATIONS says time passed and nothing traded (a
+#: fact about the mint). Collapsing them would turn "no return measured" into
+#: "no return possible" — different meanings, same None.
+NO_OBSERVATIONS = "NO_OBSERVATIONS"
 
 
 # ---------------------------------------------------------------------------
@@ -112,10 +123,11 @@ class HourlyVolume:
 class WindowReturn:
     """The outcome of one observation window.
 
-    ``multiple`` is ``None`` exactly when the entry is younger than the window, in
-    which case ``status`` is ``INSUFFICIENT_WINDOW``. Zero observations inside a
-    *mature* window is not the same thing and must be reported as such — it is a
-    fact about the mint (nothing traded), not about the data.
+    ``multiple`` is ``None`` exactly when no return was measured, i.e. ``status``
+    is ``INSUFFICIENT_WINDOW`` (the entry is younger than the window) or
+    ``NO_OBSERVATIONS`` (the window is mature but held no swap-derived price).
+    The two are kept apart on purpose: one is a fact about elapsed time, the
+    other about the mint.
     """
 
     window_days: int
@@ -206,9 +218,10 @@ def max_subsequent_return(
     saying so. The list of windows is returned in full so the caller can see which
     ones were usable.
 
-    **Not implemented yet.** Contract only. When implemented, this must read prices
-    derived from the swap itself (docs/PHASE1A_RECOVERY.md §2) and must not fall
-    back to a provider candle to fill a gap.
+    **Prices come from swaps only.** An observation whose ``source`` is not
+    ``swap_derived`` is ignored rather than tolerated: a provider candle used to
+    fill a gap would make the metric a blend of two provenances and the peak
+    would not be attributable (docs/PHASE1A_RECOVERY.md §2).
 
     Args:
         entry_price_quote: quote-per-whole-base-unit paid at entry.
@@ -219,16 +232,55 @@ def max_subsequent_return(
         headline_days: which window the prose quotes; must be in ``windows_days``.
 
     Returns:
-        A :class:`MaxSubsequentReturn` carrying every requested window.
+        A :class:`MaxSubsequentReturn` carrying every requested window — ``OK``
+        with a multiple, ``INSUFFICIENT_WINDOW``, or ``NO_OBSERVATIONS``.
 
     Raises:
-        NotImplementedError: always, until the logic lands (S5).
+        ValueError: entry price not positive, or ``headline_days`` not among
+            ``windows_days`` — a headline naming an unreported window produces
+            prose nobody can trace back to a row.
     """
-    raise NotImplementedError(
-        "max_subsequent_return is defined but not implemented (PHASE1B_SCOPING S5). "
-        "Definition: docs/PHASE1A_RECOVERY.md section 5; config keys under "
-        "early_entry.max_subsequent_return_*."
-    )
+    if entry_price_quote <= 0:
+        raise ValueError(f"entry_price_quote must be positive, got {entry_price_quote}")
+    if headline_days not in windows_days:
+        raise ValueError(f"headline_days={headline_days} not in windows_days={tuple(windows_days)}")
+
+    age = as_of - entry_time
+    # Point-in-time: strictly after entry, at or before as_of. For a mature
+    # window the horizon is <= as_of anyway, so the cutoff never quietly
+    # extends a window — it makes the intent explicit rather than emergent.
+    eligible = [
+        o for o in observations
+        if o.source == "swap_derived" and entry_time < o.at <= as_of
+    ]
+
+    windows: list[WindowReturn] = []
+    for n in sorted(set(windows_days)):
+        if age < _dt.timedelta(days=n):
+            windows.append(WindowReturn(window_days=n, status=INSUFFICIENT_WINDOW))
+            continue
+        in_window = [o for o in eligible if o.at <= entry_time + _dt.timedelta(days=n)]
+        if not in_window:
+            windows.append(WindowReturn(window_days=n, status=NO_OBSERVATIONS))
+            continue
+        peak = in_window[0]
+        for o in in_window[1:]:
+            # Highest price wins; ties break to the EARLIER observation so
+            # peak_day is reproducible rather than input-order dependent.
+            if o.price_quote > peak.price_quote or (
+                o.price_quote == peak.price_quote and o.at < peak.at
+            ):
+                peak = o
+        windows.append(
+            WindowReturn(
+                window_days=n,
+                status="OK",
+                multiple=peak.price_quote / entry_price_quote,
+                peak_day=(peak.at - entry_time).days,
+            )
+        )
+
+    return MaxSubsequentReturn(headline_days=headline_days, windows=tuple(windows))
 
 
 def buyer_rank_at_entry(
@@ -263,7 +315,9 @@ def buyer_rank_at_entry(
     the genesis-burst rule (``solscope/quality_filter.py``) compares the same
     timestamps.
 
-    **Not implemented yet.** Contract only (S5).
+    Duplicate rows for one buyer collapse to the earliest time — first buy is
+    unique per buyer by definition — and ``wallet_first_buy_at`` is
+    authoritative for the wallet itself if it disagrees with its own row.
 
     Args:
         wallet: the buyer address being ranked.
@@ -274,14 +328,31 @@ def buyer_rank_at_entry(
     Returns:
         A :class:`BuyerRank`; ``computed=False`` when the set is incomplete or the
         wallet is absent from it.
-
-    Raises:
-        NotImplementedError: always, until the logic lands (S5).
     """
-    raise NotImplementedError(
-        "buyer_rank_at_entry is defined but not implemented (PHASE1B_SCOPING S5). "
-        "Definition: docs/PHASE1A_RECOVERY.md section 5; config keys under "
-        "early_entry.buyer_rank_*."
+    if not buyer_set_complete:
+        return BuyerRank(computed=False, reason="incomplete_buyer_set")
+    if not buyers:
+        return BuyerRank(computed=False, reason="no_buyers")
+
+    first: dict[str, _dt.datetime] = {}
+    for b in buyers:
+        if b.buyer not in first or b.first_buy_at < first[b.buyer]:
+            first[b.buyer] = b.first_buy_at
+    if wallet not in first:
+        return BuyerRank(computed=False, reason="wallet_not_in_buyer_set")
+    first[wallet] = wallet_first_buy_at
+
+    # (time, address): the address tie-break makes near-simultaneous buys
+    # order deterministically — a rank that shifts between runs is not
+    # evidence, and §4 exists because that case is common.
+    ordered = sorted(first.items(), key=lambda kv: (kv[1], kv[0]))
+    rank = next(i for i, (addr, _) in enumerate(ordered, start=1) if addr == wallet)
+    total = len(ordered)
+    return BuyerRank(
+        computed=True,
+        rank=rank,
+        total_unique_buyers=total,
+        percentile=Decimal(rank) / Decimal(total),
     )
 
 
@@ -296,14 +367,17 @@ def pct_entries_before_volume_spike(
     """Fraction of the wallet's entries that preceded the mint's volume spike.
 
     **Definition of "spike".** The first hour whose volume is at least
-    ``spike_multiple`` times the **rolling median** hourly volume over the preceding
-    ``rolling_median_hours`` hours, **excluding the first ``exclude_first_hours``
-    hours** from the comparison window.
+    ``spike_multiple`` times the **rolling median** hourly volume of the
+    preceding ``rolling_median_hours`` hours — and the first
+    ``exclude_first_hours`` hours are never candidates for that honour.
 
     Both exclusions matter. A median (not a mean) stops one outsized hour from
-    raising the bar that later hours are judged against. Excluding the opening hours
-    stops a mint's own launch burst — which is not a *spike* relative to a baseline,
-    it is the baseline not existing yet — from being detected as one.
+    raising the bar that later hours are judged against. Excluding the opening
+    hours from *candidacy* stops a mint's launch burst from being reported as
+    "the spike": hour zero has no baseline at all — the baseline is precisely
+    what does not exist yet — so calling it a spike would mark every genesis
+    buyer as post-spike, which is the opposite of what this metric exists to
+    credit.
 
     **No spike observed.** If no hour qualifies, ``no_spike_observed`` is true and
     ``fraction_before_spike`` is 1.0: every entry preceded the spike because there
@@ -315,24 +389,65 @@ def pct_entries_before_volume_spike(
     from swap deltas and timestamps already decoded, so this metric needs no external
     volume feed and no additional credits.
 
-    **Not implemented yet.** Contract only (S5).
+    An entry counts as *before* the spike only if it landed strictly before the
+    spike hour began. An entry during the spike hour is ambiguous — it may have
+    caused part of the spike — and is not credited as early.
 
     Args:
         entry_times: the wallet's entry timestamps for this mint.
         hourly_volume: mint volume per clock hour, ascending, contiguous.
         spike_multiple: threshold multiple of the rolling median.
         rolling_median_hours: baseline window length in hours.
-        exclude_first_hours: opening hours omitted from the baseline.
+        exclude_first_hours: opening hours that may never be the spike.
 
     Returns:
         A :class:`VolumeSpikeResult`; ``fraction_before_spike`` is ``None`` only when
         there are no entries to measure.
-
-    Raises:
-        NotImplementedError: always, until the logic lands (S5).
     """
-    raise NotImplementedError(
-        "pct_entries_before_volume_spike is defined but not implemented "
-        "(PHASE1B_SCOPING S5). Definition: docs/PHASE1A_RECOVERY.md section 5; "
-        "config keys under early_entry.spike_*."
+    hours = sorted(hourly_volume, key=lambda h: h.hour_start)
+    notes: list[str] = []
+    if not hours:
+        notes.append("no hourly volume to scan")
+
+    spike_at: _dt.datetime | None = None
+    spike_ratio: Decimal | None = None
+
+    for i in range(len(hours)):
+        if i < exclude_first_hours:
+            continue  # opening hours are never the spike
+        baseline = hours[max(0, i - rolling_median_hours):i]
+        if not baseline:
+            continue  # nothing to compare against yet (hour zero)
+        median = statistics.median([h.volume for h in baseline])
+        if median <= 0:
+            notes.append(f"non-positive baseline median before hour index {i}; skipped")
+            continue
+        ratio = hours[i].volume / median
+        if ratio >= spike_multiple:
+            spike_at = hours[i].hour_start
+            spike_ratio = ratio
+            break
+
+    if spike_at is None and hours:
+        notes.append("no hour reached the spike threshold")
+
+    total = len(entry_times)
+    if total == 0:
+        before, fraction = 0, None
+    elif spike_at is None:
+        # No spike means nothing is post-spike. The alternative would penalise
+        # wallets for the market staying quiet.
+        before, fraction = total, Decimal(1)
+    else:
+        before = sum(1 for t in entry_times if t < spike_at)
+        fraction = Decimal(before) / Decimal(total)
+
+    return VolumeSpikeResult(
+        spike_at=spike_at,
+        spike_ratio=spike_ratio,
+        entries_total=total,
+        entries_before_spike=before,
+        fraction_before_spike=fraction,
+        no_spike_observed=spike_at is None,
+        notes=tuple(notes),
     )

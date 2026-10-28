@@ -447,13 +447,26 @@ Effort in **turns** (agent turns of work), not hours. Cost is Helius credits.
 | **S1** | Mint genesis decoder + mint age + reverse pagination **(critical path)** | 1–2 | 0–210 | — |
 | **S2** | mint → pool resolution + ambiguity diagnostic; fix `token_age_seconds` semantics | 1 | 0 | S1 |
 | **S3** | Price series from swap ratios over archived txs; positions reconstruction | 1–2 | 0 | S2 |
-| **S4** | Quality filter, genesis-burst first-class, against **mocked** positions | 1 | 0 | — *(parallel)* |
-| **S5** | `scoring.yaml` §5 correction + `metric_definitions` + scoring consumer → `scores` | 1 | 0 | — *(parallel)* |
+| **S4** | Quality filter, genesis-burst first-class, against **mocked** positions — **DONE 2026-10-28** | 1 | 0 | — *(parallel)* |
+| **S5** | `scoring.yaml` §5 correction + `metric_definitions` + scoring consumer → `scores` — **config + metric bodies DONE 2026-10-28; consumer still open** | 1 | 0 | — *(parallel)* |
 | **S6** | Anchor registry DDL + end-to-end mocked-anchor run | 1 | 0 | S3, S4, S5 |
 | **S7** | *Only if anchors stay unsupplied:* screening proof on 3 independent anchors | 1–2 | ~3,000 | S6 |
 
 **Critical path: S1 → S2 → S3 → S6.**
 **S4 and S5 are parallel and can start now**, because both are testable against mocked rows.
+
+**Status 2026-10-28.** **S4 is complete:** `solscope/quality_filter.py` implements the
+genesis-burst rule, the three-way verdict (accepted / rejected / not_computable), and the
+§4 anchor-set preconditions; `tests/test_phase1b_filter.py` calibrates it against synthetic
+bundled and clean sets — bundled **100% rejected**, clean **0% false positives**, the 35
+single-anchor clean wallets reported as not_computable in their own bucket. That
+calibration validates the *implementation against the spec*, **not** N=2/Y=60: both sets
+are synthetic, so `NOTES.md` § `QUALITY_FILTER_PENDING` stays open. **S5 is partly
+complete:** `config/scoring.yaml` carries the §5 weights, `solscope/metrics.py` implements
+all three metric bodies with hand-computed tests (`tests/test_phase1b_metrics.py`), and the
+double-count resolution is recorded in Q4 — **the scoring consumer that reads those
+metrics and writes `scores` is still open**, which is the remainder of S5. S1–S3 and S6 are
+untouched.
 
 **Total to the checkpoint: ~5–7 turns, ~0–210 credits.**
 
@@ -475,9 +488,12 @@ the Phase 2 gate was designed to surface early.
 
 ### Two things to settle before S5
 
-1. **Forward-appreciation ownership** — `max_subsequent_return` vs
-   `token_selection.hit_multiple` (Q4). Settle it in `metric_definitions.owning_subscore`.
-2. **The DexScreener unit question** (Q5), before any screening budget is committed in S7.
+1. **Forward-appreciation ownership** — **SETTLED 2026-10-28** (Q4): `early_entry` owns
+   forward appreciation through `weight_max_subsequent_return`; `hit_multiple` leaves the
+   weighted score at `weight_hit_rate: 0.00` and stays a diagnostic column. What remains is
+   the mechanical part — mirroring the ownership in `metric_definitions.owning_subscore`
+   when the scoring consumer is built.
+2. **The DexScreener unit question** (Q5), before any screening budget is committed in S7. **Still open.**
 
 ---
 

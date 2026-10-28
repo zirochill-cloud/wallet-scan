@@ -307,6 +307,14 @@ them as tuned, and do not treat a filter result as evidence until they are measu
 would be fitted on does not exist. They are recorded as defaults so the rule has a starting
 shape — not because any measurement supports them.
 
+**Synthetic calibration exists (2026-10-28), and it is NOT validation.**
+`tests/test_phase1b_filter.py` runs the implemented rule over two labelled synthetic sets:
+**100% of 50 bundled wallets rejected, 0% of 50 clean wallets rejected**, with 35
+single-anchor clean wallets held in their own not_computable bucket. That proves the
+implementation matches the specification. It says nothing about whether N = 2 and Y = 60
+separate real bundles from organic buyers, because both sets are synthetic — so nothing in
+this section's status changes.
+
 What validation requires, and what is missing:
 
 | Needed | Status |
