@@ -7,13 +7,37 @@
 #   python3 -m venv .venv
 #   ./.venv/bin/pip install -r requirements-dev.txt
 #   ./.venv/bin/python tests/test_phase0.py
+#
+# ---------------------------------------------------------------------------
+# ONE COMMAND — the two DB suites (test_schema_smoke, test_ledger_live)
+#
+#   bash bootstrap_db.sh
+#
+# Stages the portable PostgreSQL binaries and the virtualenv under a SHORT
+# path (%LOCALAPPDATA%\Temp\solscope-dbtest, ~60 chars), initialises a
+# cluster, starts it on 127.0.0.1:5433, runs `solscope migrate` against its
+# own scratch database, runs both DB suites, asserts the admin database still
+# has 0 public tables, and stops the server again. Exit 0 only if everything
+# passed — and a suite that SKIPs does NOT count: the script greps for each
+# suite's final PASS marker, because both suites exit 0 when psycopg is
+# missing. Repeatable: re-running reuses the venv, the binaries and the
+# cluster.
+#
+# Why a script and not docker: Docker is not installed on this machine
+# (checked 2026-10-26), and pgserver publishes no Windows build, so a native
+# Windows PostgreSQL run locally is the only path that works here.
+# ---------------------------------------------------------------------------
 
 # Schema verification (tests/test_schema_smoke.py)
 psycopg[binary]>=3.1      # direct PostgreSQL adapter
-pgserver>=0.1.4           # bundles a local PostgreSQL for tests without a daemon/docker (Linux/macOS only)
+pgserver>=0.1.4; sys_platform != "win32"   # bundles a local PostgreSQL for tests without a daemon/docker (Linux/macOS only — on Windows the bootstrap_db.sh path below covers this)
 #
 # ---------------------------------------------------------------------------
 # RESOLVED (2026-10-26): how the two DB suites run on Windows.
+#
+# The manual sequence below is now AUTOMATED by `bash bootstrap_db.sh` — run
+# that instead. The steps stay here so the automation is auditable, and the
+# short-path rule behind them is why the script exists at all.
 #
 # Chosen path: a NATIVE Windows PostgreSQL run locally, no admin rights needed,
 # using EDB's portable server binaries. pgserver has no Windows build, so it

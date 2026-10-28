@@ -66,7 +66,14 @@ set -a; source .env; set +a          # HELIUS_API_KEY (and SOLSCOPE_PGDSN for DB
 solscope doctor                       # config + budget sanity
 solscope derive --gate --no-db --pairs 20 --tolerance 5
 python tests/test_phase2.py           # decoder + gate contract, against real mainnet fixtures
+bash bootstrap_db.sh                  # ONE command: venv + PostgreSQL + migrations + both DB suites
 ```
+
+`bash bootstrap_db.sh` is the only supported way to run the two DB suites
+(`test_schema_smoke`, `test_ledger_live`) on Windows: it stages everything at a short
+path (this project's 164-character path breaks psycopg and Postgres itself), runs
+`solscope migrate` for real, and fails if a suite merely SKIPs. Details:
+[requirements-dev.txt](requirements-dev.txt).
 
 ## The three ideas this design turns on
 
