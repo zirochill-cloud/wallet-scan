@@ -136,12 +136,25 @@ PROGRAMS: dict[str, ProgramSpec] = {
     ),
 }
 
-# Programs we deliberately do NOT decode (distinct account layouts, no
-# verified fixtures yet). Named so skips are explainable, not mysterious.
+# Programs we deliberately do NOT decode, so that a skip is a NAMED event
+# rather than a silent absence from PROGRAMS. Two reasons live here:
+#   unverified  - distinct account layout, no verified fixtures yet;
+#   abstention  - a known program we choose not to decode (Jupiter, below).
 UNVERIFIED_PROGRAMS = {
     "LMMJ8mwJZrFesCVYPsfkLKGvWqHhE9UbuNqtvJzCwrL": "meteora_dlmm",
     "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc": "orca_whirlpool",
     "Eo7WjKq67rjJQSZxS6z3YkapzY3eMj6Xy8X5EQVn5UaB": "meteora_dlmm",
+    # Jupiter v6 -- ABSTENTION, not an unknown layout. The top-level route
+    # instruction is intentionally not decoded: it is an aggregator, and the
+    # DEX swaps it invokes are visited like any other instruction through
+    # _iter_instructions' inner walk (their own program ids decide decoding).
+    # Registered because its absence was invisible -- docs/PHASE1A_RECOVERY.md
+    # §7 found this ID nowhere in solscope/, while aggregator-routed volume is
+    # the dominant share of live pool activity (doc 11 §8), so skipping it
+    # silently would under-count wallets that trade through Jupiter. The ID
+    # already appears in 4 fixtures (tx_buy_0/1/2, tx_sell_1); verify against
+    # those before any attempt to decode the route instruction itself.
+    "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4": "jupiter_v6",
 }
 
 

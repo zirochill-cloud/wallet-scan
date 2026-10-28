@@ -74,6 +74,8 @@ def main() -> int:
     print("\n[registry sanity]")
     check("pumpswap user index is 1", PROGRAMS["pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA"].trader_index == 1)
     check("meteora explicitly unverified", any("meteora" in v for v in UNVERIFIED_PROGRAMS.values()))
+    check("jupiter v6 registered as a named abstention (aggregator skips are countable)",
+          UNVERIFIED_PROGRAMS.get("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4") == "jupiter_v6")
 
     print("\n[direct pumpswap fixtures — decode]")
     buy = load("tx_direct_buy_3zS41H.json")

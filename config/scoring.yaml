@@ -228,6 +228,20 @@ risk:
 # while continuing to score token QUALITY (did the chosen tokens beat their
 # launch-week peers?) rather than re-scoring how far they ran.
 #
+# DEFINED, NOT ASSUMED (checked 2026-10-28, the Item-4 verification):
+# docs/05-scoring-methodology.md §9 gives the full operational definition --
+#   excess_i = log(1 + multiple_i) - log(1 + cohort_median_multiple)
+#   cohort_excess_component = 100 / (1 + exp(-mean(excess_i) / scale))
+# with cohort = tokens launched in the same week (fallback: all_tokens below
+# benchmark_min_cohort_n), and schema/001_init.sql's cohort_benchmarks table
+# stores those medians with available_at gating the point-in-time read (a
+# benchmark computed over a full 30d window is not readable on day 1 of it).
+# Its input is the same 30d swap-derived multiple that
+# early_entry.weight_max_subsequent_return consumes -- the same data
+# dependency, not a new one. That is why this weight is 1.00 rather than
+# DEFERRED: both the definition and its storage exist. DEFER this to 0.00 only
+# if cohort_benchmarks goes away or the S3 price series cannot populate it.
+#
 # Do not re-weight hit_rate without first zeroing
 # early_entry.weight_max_subsequent_return.
 # ---------------------------------------------------------------------------
