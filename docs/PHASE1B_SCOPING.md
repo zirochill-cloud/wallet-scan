@@ -200,6 +200,14 @@ aggregates, keyed by §5's inputs. `metric_definitions` must register each new m
 need exactly one owner. That registration is the mechanism that turns "avoid double-counting"
 from a promise into a constraint.
 
+**The three definitions now exist as code:** `solscope/metrics.py` carries
+`max_subsequent_return`, `buyer_rank_at_entry` and `pct_entries_before_volume_spike` as typed
+signatures with complete docstrings. **Bodies are not implemented** (they raise
+`NotImplementedError`), so the interface, the output contract and the failure modes are fixed
+before any logic is written against them. The corresponding thresholds live under
+`early_entry` in `config/scoring.yaml`. Registering the three metrics in
+`metric_definitions` is still outstanding — it is a data step, not DDL.
+
 ### Writes — **the equivalent table already exists**
 
 **No new table is needed for scores.** `scores` exists in the current schema:
@@ -216,28 +224,45 @@ Surrounded by `sub_scores` (with `explanation` NOT NULL), `score_evidence`,
 **So Q4's answer: the `wallet_scores` equivalent already exists.** What Phase 1b adds is
 metric *definitions* and the weight change — not a table.
 
-### Blocker: `config/scoring.yaml` still encodes the superseded weighting
+### Corrected: `config/scoring.yaml` now matches §5 (2026-10-26)
 
-| `scoring.yaml` today | `PHASE1A_RECOVERY.md` §5 |
+| Was | Now |
 |---|---|
-| `weight_age: 0.45` | → `buyer_rank_at_entry: 0.30` |
-| `weight_mcap: 0.35` | → `0.00` (no historical supply source) |
-| `weight_prevolume: 0.20` | → `pct_entries_before_volume_spike: 0.30` |
-| *(absent)* | `max_subsequent_return: 0.40` |
+| `weight_age: 0.45` | `weight_token_age: 0.00` — retained, **diagnostic only** |
+| `weight_mcap: 0.35` | `weight_mcap: 0.00` — retained, **deferred** (no historical supply source) |
+| `weight_prevolume: 0.20` | `weight_pct_entries_before_volume_spike: 0.30` |
+| *(absent)* | `weight_max_subsequent_return: 0.40` |
+| *(absent)* | `weight_buyer_rank_at_entry: 0.30` |
 
-`frozen: false`, so this is a live inconsistency rather than a freeze violation — but the
-freeze rule means it must be corrected **before** any validation run, since weights changed
-after seeing results invalidate the validation.
+`early_entry` sub-weights sum to 1.00; top-level `weights` still sum to 1.0 (both asserted by
+`tests/test_scoring_config.py`, which passes). `version` bumped `1.0.0` → `1.1.0` so the
+changed weighting is distinguishable in `score_config_versions.config_sha256` — the freeze
+machinery depends on telling two weight sets apart, and `frozen` remains `false`.
 
-Top-level `weights` still sum to 1.0 (asserted at load), so a §5 change is **internal to the
-`early_entry` dimension** and does not disturb the sum across the 7 ranked dimensions.
+The edit was made **before** any validation run, which matters: the freeze rule says weights
+changed after seeing results invalidate the validation.
 
-### Unresolved before that edit
+### Double-count — resolved: `early_entry` owns forward appreciation
 
-`max_subsequent_return` (`early_entry`, 0.40) and `token_selection.hit_multiple: 3.0` are
-**the same forward-appreciation signal**. `metric_definitions.owning_subscore` is where this
-gets settled, and it must be settled once — otherwise the largest new weight double-counts
-the signal token_selection already scores.
+`max_subsequent_return` (`early_entry`, 0.40) and `token_selection.hit_multiple: 3.0` measure
+the **same signal**. Resolution, recorded in `PHASE1A_RECOVERY.md` §5 and in the
+`token_selection` block of `config/scoring.yaml`:
+
+- **`hit_multiple` leaves the weighted score** and is retained as a **diagnostic column**.
+- `token_selection.weight_hit_rate` → **0.00**; `weight_cohort_excess` → **1.00**, so the
+dimension still sums to 1.0 and still scores token *quality* (did the chosen tokens beat
+their launch-week peers?) without re-scoring appreciation.
+
+**Why this direction.** `max_subsequent_return` is continuous and measures magnitude;
+`hit_multiple ≥ 3.0` is a binary threshold that collapses every outcome above 3× into one
+bucket. Scoring both double-rewards appreciation, and the binary half **structurally favours
+a wallet with a few large wins over one with consistent mid-sized wins** — the opposite of the
+stated objective ("repeatable performance across multiple tokens rather than one lucky
+trade", requirements §A).
+
+`metric_definitions.owning_subscore` is where this ownership is enforced at the database
+level once the three metrics are registered. The prior session never flagged the overlap; it
+was found while scoping Phase 1b, not recovered.
 
 ---
 
@@ -403,6 +428,13 @@ Four reasons, in order of weight:
 
 **Checkpoint requirement:** the 3 proof anchors must satisfy §4's independence criteria. Three
 non-independent anchors prove nothing — that is §4's own lesson, learned the expensive way.
+
+**TBD — anchor count is an open question, not a settled number.** Nothing here establishes how
+many anchors Phase 1b needs to support a claim about a wallet: 3 is the size of the *proof*
+fixture, not a statistical requirement. A power calculation is required, and it cannot be done
+usefully until the pipeline produces per-wallet metrics to estimate variance from. **Marked
+TBD, to be resolved after the S6 checkpoint.** The same open item is recorded in `NOTES.md` §
+`QUALITY_FILTER_PENDING`.
 
 ---
 

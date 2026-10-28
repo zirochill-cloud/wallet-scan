@@ -74,6 +74,18 @@ Must be re-verified when Phase 1b implements this.**
 - **Token age** is computed from that transaction's `blockTime`.
 - **Price series** comes from swap ratios: `sol_delta / abs(amount_delta)`.
 
+> ### ⚠ Callout — do not reuse `swaps.token_age_seconds` as mint age
+>
+> The schema documents that column as **`event_time - pool.created_at`** — that is
+> **pool age**, not mint age. §2's age is measured from the **mint's creation
+> transaction**. For a pool created in the same transaction as the mint the two
+> coincide, which is exactly what makes the mistake easy to miss; for a mint that traded
+> before migration, or whose pool was created later, they diverge. In the §5 population
+> (median age **1 day**) a small absolute divergence is a large *relative* one.
+>
+> **Any consumer needing mint age must compute it from genesis and must not read this
+> column.** See the re-verification requirement below, item (b).
+
 Why the mint rather than the pool: the pool registry only knows pools someone has
 already shortlisted. A launch the collector never saw has no registry entry, but it
 always has a mint, and the mint's own transaction history begins at creation. That
@@ -132,9 +144,27 @@ inside a single second — the filter's inputs were individual-wallet properties
 the bundle's signature was a *relationship between* wallets that no per-wallet test
 could see.
 
+### Input domain — resolved: the anchor→wallet→swaps chain, not positions alone
+
+**`wallet_quality_filter` was an ambiguous name — it read like a filter over wallets in
+isolation. It is not.** The filter reads the **anchor→wallet→swaps chain**:
+
+| Input | Source | Why positions alone is insufficient |
+|---|---|---|
+| first buy per (wallet, anchor) | `swaps`, via `swaps_wallet_token_idx` | `positions.entry_token_age_seconds` gives the *delta* from genesis but loses the **anchor identity**, so a wallet's behaviour cannot be compared **across** anchors. |
+| anchor identity + genesis time | anchor registry (new — `PHASE1B_SCOPING.md` Q2) | The genesis-burst rule counts anchors entered within `Y` seconds of genesis. Counting requires knowing which anchor each entry belongs to. |
+| the wallet's anchor history | anchor→wallet edges | "≥N anchors" is a statement spanning several anchors by one wallet, not a property of one position. |
+
+**Consequence:** the filter's unit of decision is the **(wallet, anchor) pair**, and its
+verdict is relative to a *specific anchor set* — not an intrinsic property of a wallet.
+The same wallet can be accepted against one anchor set and rejected against another.
+That is why filter verdicts must be versioned and immutable (`PHASE1B_SCOPING.md` Q2
+invariant 3): a verdict divorced from its anchor set and rule version means nothing.
+
 ### Proposed genesis-burst rule
 
-**Status: PROPOSED — never implemented, never tested.**
+**Status: PROPOSED — never implemented, never tested. `N` and `Y` are a guess, not a
+tuned value; see `NOTES.md` § `QUALITY_FILTER_PENDING`.**
 
 > If a wallet's **first buy** for **≥N anchors** occurs within **Y seconds** of each
 > anchor's **genesis**, reject the wallet.
@@ -254,13 +284,30 @@ weight in §5 (0.40) has no counterpart at all. `config/scoring.yaml` is **not f
 violation — but it must be corrected *before* any validation run, because the freeze
 rule says weights changed after seeing validation results invalidate the validation.
 
-**One double-counting risk to settle before that edit:** `max_subsequent_return` in
-`early_entry` and `token_selection.hit_multiple: 3.0` ("token reached ≥ 3× entry mcap
-within the window") are the same underlying signal — forward appreciation. The
-requirements forbid double-counting correlated indicators, and
-`metric_definitions.owning_subscore` exists precisely to enforce single ownership.
-Whichever subscore owns forward appreciation must own it once. This is unresolved and
-is listed as a thin spot below.
+### Double-counting — resolved: `early_entry` owns forward appreciation
+
+`max_subsequent_return` (`early_entry`) and `token_selection.hit_multiple: 3.0`
+("token reached ≥ 3× entry mcap within the window") measure the **same underlying
+signal** — forward appreciation. The requirements forbid double-counting correlated
+indicators, and `metric_definitions.owning_subscore` exists to enforce single ownership.
+
+**Resolution: `early_entry` owns it. `hit_multiple` leaves the weighted score and is
+retained as a diagnostic only.** `token_selection.weight_hit_rate` → **0.00** and
+`weight_cohort_excess` → **1.00**, so the dimension still sums to 1.0 and still scores
+token quality (cohort-relative excess) without re-scoring appreciation.
+
+**Why this direction and not the reverse.** `max_subsequent_return` is *continuous* and
+measures magnitude. `hit_multiple ≥ 3.0` is a *binary threshold* that collapses every
+outcome above 3× into a single bucket. Scoring both double-rewards appreciation, and the
+binary half does so in a way that **structurally favours a wallet with a few large wins
+over a wallet with consistent mid-sized wins** — the opposite of the stated objective
+("repeatable performance across multiple tokens rather than one lucky trade",
+requirements §A). Cohort excess separately asks whether the tokens *chosen* beat their
+launch-week peers, which is a different question from how far any one of them ran.
+
+Recorded in `config/scoring.yaml` (comment on the `token_selection` block) and in
+`PHASE1B_SCOPING.md` Q4. **The prior session never flagged this overlap** — it was found
+while scoping Phase 1b, not recovered.
 
 ---
 
@@ -333,17 +380,26 @@ spots.**
 | All other DEXes: wSOL in `tokenTransfers` | VERIFIED | Consistent — PumpSwap is registered with `quote_is_native=False`, while pump.fun bonding curve and LaunchLab are `quote_is_native=True`. |
 | Helius **v0 vs v1** schema differs: `tokenAmount` float vs `rawTokenAmount` + `decimals` int | VERIFIED | **No version handling exists.** `decode.py:286/299/301` and `derive.py:474/482/490` read `uiTokenAmount.amount`; `derive.py:530` reads parsed-account `info["tokenAmount"]`. There is no branch on `rawTokenAmount` and no response-version check. If Helius serves v1 for any of these paths, the read silently mis-parses. **Real gap — see thin spots.** |
 
-### Program IDs — verified against `decode.py`
+### Program IDs — status in the current codebase
 
-| Program | ID | **[checked today]** |
-|---|---|---|
-| PumpSwap AMM | `pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA` | **In `PROGRAMS`** — dex `pumpswap`; trades `buy`/`sell`/`buy_v2`/`sell_v2`/`buy_exact_quote_in`/`buy_exact_quote_in_v2`; `pool_index=0`, `trader_index=1`. **Gate-verified.** |
-| pump.fun bonding curve | `6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P` | **In `PROGRAMS`** — dex `pump`; `buy`/`sell`/`buy_v2`/`sell_v2`/`buy_v3`/`sell_v3`; `pool_index=3`, `trader_index=6`, `quote_is_native=True`. **Matches §7.** |
-| Raydium AMM v4 | `675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8` | **In `PROGRAMS`** — not Anchor; numeric first-byte tags 9/11 (v1) and 16/17 (v2); `pool_index=1`, `trader_index=17`. **Matches §7.** Registry entry exists but is **not validated on live fixtures** (doc 11 §8). |
-| Orca Whirlpool | `whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc` | **In `UNVERIFIED_PROGRAMS`** — deliberately not decoded; skips are named so they are explainable. **Matches doc 11: "explicitly not decoded (abstains)."** Also appears incidentally in 2 test fixtures. |
-| Jupiter v6 | `JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4` | **Absent from `solscope/` entirely** — not in `PROGRAMS`, not in `UNVERIFIED_PROGRAMS`. It appears only incidentally in 4 test fixtures as a program id in the account list. So §7's verified ID has **no home in the decoder**; aggregator attribution is still open, consistent with doc 11 §8. |
-| Meteora LbPair discriminator | `210b3162b565b10d` | **0 occurrences** in `decode.py`. Not registered. |
-| `tessera_v` — **not Meteora-owned** | discriminator `61ef4409e1dd7b18` | **0 occurrences** in `decode.py`. The negative finding (it is *not* Meteora) is recorded nowhere in current code. |
+Status key: **VERIFIED_IN_CURRENT_CODEBASE** (present in `PROGRAMS` or
+`UNVERIFIED_PROGRAMS`, matching the prior finding) · **VERIFIED_PRIOR_ONLY** (verified in
+the prior session; no home in current code) · **ABSENT_FROM_CURRENT_CODEBASE** (does not
+appear in `solscope/` at all).
+
+| Program / finding | ID or discriminator | Status | Evidence and implication |
+|---|---|---|---|
+| PumpSwap AMM | `pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA` | **VERIFIED_IN_CURRENT_CODEBASE** | In `PROGRAMS` — dex `pumpswap`; `buy`/`sell`/`buy_v2`/`sell_v2`/`buy_exact_quote_in`/`buy_exact_quote_in_v2`; `pool_index=0`, `trader_index=1`. **Gate-verified on live mainnet.** |
+| pump.fun bonding curve | `6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P` | **VERIFIED_IN_CURRENT_CODEBASE** | In `PROGRAMS` — dex `pump`; `buy`/`sell`/v2/v3; `pool_index=3`, `trader_index=6`, `quote_is_native=True`. Matches §7. |
+| Raydium AMM v4 | `675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8` | **VERIFIED_IN_CURRENT_CODEBASE** (registry only) | In `PROGRAMS` — tags 9/11 (v1), 16/17 (v2); `pool_index=1`, `trader_index=17`. Matches §7. **Caveat:** the *entry* exists but is **not validated on live fixtures** (doc 11 §8) — registered is not proven. |
+| Raydium CPMM | `CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C` | **VERIFIED_IN_CURRENT_CODEBASE** | In `PROGRAMS`; discriminator bytes independently verified (`8fbe5adac41e33de` / `37d96256a34ab4ad`). Absent from §7's list — current code knows more than the prior session recorded. |
+| Raydium LaunchLab | `LanMV9sAd7wArD4vJFi2qDdfnVhFxYSUg6eADduJ3uj` | **VERIFIED_IN_CURRENT_CODEBASE** | In `PROGRAMS`. Also absent from §7's list. |
+| Orca Whirlpool | `whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc` | **VERIFIED_IN_CURRENT_CODEBASE — as a named abstention** | In `UNVERIFIED_PROGRAMS`: deliberately **not decoded**, so the ID is *known* but no trade is attributed. Matches doc 11 ("explicitly not decoded (abstains)"). Also appears incidentally in 2 fixtures. |
+| Jupiter v6 | `JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4` | **ABSENT_FROM_CURRENT_CODEBASE** | Not in `PROGRAMS`, not in `UNVERIFIED_PROGRAMS`; appears only incidentally in 4 fixtures. **Implication — coverage gap in `decode.py`'s `PROGRAMS`.** Aggregator-routed swaps are the dominant share of live pool activity (doc 11 §8), so anything Phase 1b reconstructs will under-count wallets that trade through Jupiter. Two next steps, neither this turn: **register it as an explicit named abstention** at minimum (so skips are *countable*, as they are for Orca/Meteora), and **verify the ID against the fixtures** before any decode attempt — do not begin until the filter/scorer work lands. |
+| Meteora LbPair discriminator | `210b3162b565b10d` | **ABSENT_FROM_CURRENT_CODEBASE** | 0 occurrences in `decode.py`. **Implication — non-blocking.** Two Meteora *program ids* are already named in `UNVERIFIED_PROGRAMS`, so Meteora is accounted for as an abstention; the bare discriminator adds nothing until a decoder is attempted. Re-derivable on demand from on-chain data. Do not block on it. |
+| `tessera_v` — **not Meteora-owned** | discriminator `61ef4409e1dd7b18` | **ABSENT_FROM_CURRENT_CODEBASE** | 0 occurrences in `decode.py`. **Implication — non-blocking.** A *negative* finding with no owner identified, so it is not actionable as recorded; re-derive the owner from on-chain data if a `tessera_v` swap ever needs attributing. No current phase depends on it. |
+| Helius response version handling (`tokenAmount` float vs `rawTokenAmount` + `decimals` int) | n/a | **ABSENT_FROM_CURRENT_CODEBASE** | **Implication — real gap, S4/S6 work.** `decode.py:286/299/301` and `derive.py:474/482/490` read `uiTokenAmount.amount`; `derive.py:530` reads parsed `info["tokenAmount"]`. No branch on `rawTokenAmount`, no version check. Harden before the filter and scorer consume decoded amounts at volume, or a v1 response silently mis-parses. |
+| Mint genesis decoder (`create_v2` / `initialize_mint2`) | n/a | **ABSENT_FROM_CURRENT_CODEBASE** | **Implication — S1 work, the critical path.** Zero occurrences in `solscope/`, `tests/`, `docs/`. §2's route cannot compute mint age, buyer rank, or the genesis-burst rule without it. See `PHASE1B_SCOPING.md` Q6. |
 
 **Additional registry entries current code has that §7 does not mention** — noted so
 the two lists are not mistaken for inconsistent:

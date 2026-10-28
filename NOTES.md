@@ -285,6 +285,51 @@ blocker still applies unchanged to the greenfield parts.
   substantive claim — no Phase 1a *artifacts* — is what the greps above establish.
 - `docs/INVENTORY.md` § "Why 41 is more than Phases 0–2 should produce" **misattributes
   the Phase 1a tables** to `chains`/`tokens`/`pools`/`raw_payloads`. Per this audit the
-  Phase 1a tables do not exist at all; that section's phase attribution describes the
-  *current* schema's writers (correct) but must not be read as evidence Phase 1a was
-  implemented here. Flagged, not yet edited.
+  Phase 1a tables do not exist at all; that section's phase attribution describes  the *current* schema's writers (correct) but must not be read as evidence Phase 1a was
+  implemented here. **Fixed 2026-10-26** — that section now carries an explicit "do not
+  misread this" warning, and inconsistency #7 records the rewrite.
+
+---
+
+## § QUALITY_FILTER_PENDING
+
+**Status: OPEN. The unvalidated parameters of the Phase 1b quality filter. Do not present
+them as tuned, and do not treat a filter result as evidence until they are measured.**
+
+### Genesis-burst rule: `N` and `Y` are guesses
+
+`docs/PHASE1A_RECOVERY.md` §3 proposes:
+
+> If a wallet's first buy for **≥N anchors** falls within **Y seconds** of each anchor's
+> genesis, reject the wallet.
+
+**`N = 2` and `Y = 60` are guesses.** They were never fitted to data, because the data they
+would be fitted on does not exist. They are recorded as defaults so the rule has a starting
+shape — not because any measurement supports them.
+
+What validation requires, and what is missing:
+
+| Needed | Status |
+|---|---|
+| Rejection rate on the **known-bundled** set (the 44/45 set) | **Blocked** — that set's wallet identities were lost (`PHASE1A_RECOVERY.md` §9). Recoverable only by rebuilding a bundled set from on-chain data. |
+| **False-positive** rate on a **known-clean** set | **Never measured, and no such set exists.** The larger gap: the prior filter failed on *false negatives*, and a rule tuned to catch bundles is precisely the kind that starts rejecting organic early buyers. |
+| Sensitivity of the rejection rate to `N` and `Y` | Not measured. |
+
+**Guard against misuse:** `solscope/quality_filter.py` exports
+`GENESIS_BURST_DEFAULTS_VALIDATED = False` beside the two constants, so a caller cannot pick
+the numbers up without also picking up the fact that they are unvalidated. Flip it only after
+both rows above are measured.
+
+### The three prior heuristics remain unported
+
+`sandwich`, `throughput`, `router_only` have **no codes and no rules**. They were never
+tested, and the filter they belonged to admitted 44 of 45 bundled wallets. They are listed in
+`NOT_PORTED_HEURISTICS` so the omission stays deliberate and cannot be silently reintroduced.
+
+### Related open item — anchor count
+
+Phase 1b has **no anchor-count requirement**: nothing states whether 3 anchors, 20, or 200 are
+needed to support a claim. That needs a power calculation, and it is marked **TBD** in
+`docs/PHASE1B_SCOPING.md`. The minimum viable run uses 3 *mocked* anchors to prove the
+plumbing — a fixture size, not a statistical one.
+
