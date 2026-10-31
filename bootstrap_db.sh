@@ -11,8 +11,10 @@
 #   2. create the virtualenv at a SHORT path and install requirements-dev.txt
 #   3. initdb a cluster once under the same short root
 #   4. start the server on 127.0.0.1:5433
-#   5. run `solscope migrate` against its own scratch database, assert >= 40 tables
-#   6. run both DB suites, each of which must reach its final PASS marker
+#   5. run `solscope migrate` against its own scratch database, assert >= 40
+#      tables, assert every migration file was recorded, assert the anchor
+#      registry's three tables exist
+#   6. run the three DB suites, each of which must reach its final PASS marker
 #   7. assert the admin database still has 0 public tables
 # and stop the server on the way out, pass or fail.
 #
@@ -106,13 +108,32 @@ timeout 600 "$VENV/Scripts/python.exe" -m pip install --disable-pip-version-chec
 
 # --- 3. cluster -----------------------------------------------------------
 step "3/7 cluster at $PGDATA"
-if [ ! -f "$PGDATA/PG_VERSION" ]; then
+
+# A cluster is not sound just because PG_VERSION exists. Temp cleaners remove
+# EMPTY directories, and initdb's pg_notify / pg_tblspc / pg_twophase are empty —
+# PostgreSQL then refuses to start with
+#     FATAL: could not open directory "pg_notify": No such file or directory
+# Observed 2026-10-31 on this script's own scratch cluster, five days after a
+# clean initdb. Validate the whole skeleton; rebuild when it is incomplete.
+REQUIRED_DIRS="base global pg_wal pg_xact pg_multixact pg_subtrans pg_stat pg_notify pg_tblspc pg_twophase"
+cluster_sound() {
+  [ -f "$PGDATA/PG_VERSION" ] || return 1
+  for d in $REQUIRED_DIRS; do [ -d "$PGDATA/$d" ] || { echo "  missing $d"; return 1; }; done
+  return 0
+}
+if cluster_sound; then
+  echo "reusing existing cluster"
+else
+  # Only this script's own scratch cluster lives here, and it is being recreated
+  # immediately — the vendor binaries under $PG_BIN are untouched.
+  [ -f "$PGDATA/PG_VERSION" ] && echo "existing cluster is incomplete — rebuilding it"
+  "$PG_BIN/bin/pg_ctl.exe" -D "$PGDATA" status >/dev/null 2>&1 \
+    && timeout 60 "$PG_BIN/bin/pg_ctl.exe" -D "$PGDATA" -m immediate stop >/dev/null 2>&1 || true
   rm -rf "$PGDATA"
   timeout 180 "$PG_BIN/bin/initdb.exe" -D "$PGDATA" -U postgres -A trust -E UTF8 --locale=C \
     > "$SHORT/initdb.log" 2>&1 || { tail -8 "$SHORT/initdb.log"; die "initdb failed"; }
+  cluster_sound || die "initdb produced an incomplete cluster at $PGDATA"
   echo "cluster initialised (trust auth, superuser postgres)"
-else
-  echo "reusing existing cluster"
 fi
 
 # --- 4. start -------------------------------------------------------------
@@ -142,6 +163,23 @@ case "$n" in ''|*[!0-9]*) die "could not count tables in solscope_bootstrap (got
 [ "$n" -ge 40 ] || die "migrate produced $n tables, expected >= 40"
 echo "solscope_bootstrap: $n tables"
 
+# Every migration file must be RECORDED, not merely present on disk. A new
+# schema file that silently fails to apply would otherwise show up as "a couple
+# of tables missing" much later, in a test that is about something else.
+for m in 001_init 002_anchor_registry; do
+  found=$(psqlq solscope_bootstrap "select count(*) from schema_migrations where name='${m#*_}'") \
+    || die "could not read schema_migrations"
+  [ "$found" = "1" ] || die "migration $m was not recorded (schema_migrations has $found rows for it)"
+  echo "applied: $m.sql"
+done
+
+# The anchor registry's three tables must exist in the scratch database.
+for t in anchors anchor_wallet_verdicts anchor_wallet_metrics; do
+  ok=$(psqlq solscope_bootstrap "select to_regclass('public.$t') is not null")
+  [ "$ok" = "t" ] || die "table $t is missing after migration"
+done
+echo "anchor registry: anchors, anchor_wallet_verdicts, anchor_wallet_metrics present"
+
 # --- 6. the two DB suites -------------------------------------------------
 step "6/7 DB suites"
 export SOLSCOPE_TEST_PGDSN="$TEST_DSN"
@@ -153,8 +191,9 @@ run_suite() {  # run_suite <file> <required final marker>
   grep -q "$2" <<<"$out" || die "$1 never reached its PASS marker — SKIP is not a pass"
 }
 
-run_suite tests/test_schema_smoke.py "ALL SCHEMA CHECKS PASSED"
-run_suite tests/test_ledger_live.py  "ALL LIVE LEDGER CHECKS PASSED"
+run_suite tests/test_schema_smoke.py   "ALL SCHEMA CHECKS PASSED"
+run_suite tests/test_ledger_live.py    "ALL LIVE LEDGER CHECKS PASSED"
+run_suite tests/test_anchor_writer.py  "ALL ANCHOR WRITER CHECKS PASSED"
 
 # --- 7. invariant ---------------------------------------------------------
 step "7/7 admin database untouched"
