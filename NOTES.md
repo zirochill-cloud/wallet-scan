@@ -155,6 +155,26 @@ After any `Invalid parameters` error, re-verify `git status` before the next too
 call. Since the remote now exists, `git status` + a pushed baseline is the cheap
 recovery path rather than hope.
 
+**MSYS path conversion does not apply inside quoted subprocess strings
+(2026-10-28, `bootstrap_db.sh`).** A path passed to a Windows tool via an `-o` or
+`--opt` flag is handed over verbatim: `pg_ctl -o "-k /tmp/foo"` gives
+`postgres.exe` the literal `/tmp/foo`, which resolves against the drive root and
+fails with `could not create lock file "/tmp/...": No such file or directory`.
+Only *standalone* path arguments get converted. Any path inside such a string must
+be `cygpath -w`-converted before the call (`SHORT_WIN=$(cygpath -w "$SHORT")`).
+Caught by running the harness end-to-end, not by reasoning about it — the flag
+looked correct and the failure surfaced only as a server that would not start.
+
+**A directory existing is not a cluster being sound (2026-10-31,
+`bootstrap_db.sh`).** `initdb` creates several *empty* directories (`pg_notify`,
+`pg_tblspc`, `pg_twophase`). Temp cleaners delete empty directories, so five days
+after a clean `initdb` the cluster failed to start with
+`FATAL: could not open directory "pg_notify": No such file or directory` — with
+`PG_VERSION` present and `pg_ctl status` silent. A `PG_VERSION` existence check is
+not a health check: validate the required directory skeleton and rebuild the
+cluster when it is incomplete. Both failures were latent until the harness was
+actually executed; reasoning about the script had passed it twice.
+
 ---
 
 ## § PHASE1A_AUDIT
