@@ -449,7 +449,7 @@ Effort in **turns** (agent turns of work), not hours. Cost is Helius credits.
 | **S3** | Price series from swap ratios over archived txs; positions reconstruction | 1–2 | 0 | S2 |
 | **S4** | Quality filter, genesis-burst first-class, against **mocked** positions — **DONE 2026-10-28** | 1 | 0 | — *(parallel)* |
 | **S5** | `scoring.yaml` §5 correction + `metric_definitions` + scoring consumer → `scores` — **config + metric bodies DONE 2026-10-28; consumer still open** | 1 | 0 | — *(parallel)* |
-| **S6** | Anchor registry DDL + end-to-end mocked-anchor run | 1 | 0 | S3, S4, S5 |
+| **S6** | Anchor registry DDL + end-to-end mocked-anchor run — **DDL + writers DONE 2026-10-31; end-to-end mocked-anchor run still open (needs S1–S3 for real values)** | 1 | 0 | S3, S4, S5 |
 | **S7** | *Only if anchors stay unsupplied:* screening proof on 3 independent anchors | 1–2 | ~3,000 | S6 |
 
 **Critical path: S1 → S2 → S3 → S6.**
@@ -465,8 +465,18 @@ are synthetic, so `NOTES.md` § `QUALITY_FILTER_PENDING` stays open. **S5 is par
 complete:** `config/scoring.yaml` carries the §5 weights, `solscope/metrics.py` implements
 all three metric bodies with hand-computed tests (`tests/test_phase1b_metrics.py`), and the
 double-count resolution is recorded in Q4 — **the scoring consumer that reads those
-metrics and writes `scores` is still open**, which is the remainder of S5. S1–S3 and S6 are
+metrics and writes `scores` is still open**, which is the remainder of S5. S1–S3 remain
 untouched.
+
+**Status 2026-10-31. S6's storage half is complete.** `schema/002_anchor_registry.sql` adds
+`anchors`, `anchor_wallet_verdicts` and `anchor_wallet_metrics`; `solscope/anchor_writer.py`
+writes them idempotently (a re-run rewrites a row instead of doubling the evidence, and a
+new `rule_version` adds a row because verdicts under different thresholds are not
+comparable); `tests/test_anchor_writer.py` proves both against real PostgreSQL through
+`bootstrap_db.sh`, which now asserts each migration was *recorded* and that the three tables
+exist (45 tables total, all three DB suites green, admin database untouched). Verdicts,
+metrics and anchors now persist — but S6's other half, the **end-to-end mocked-anchor run**,
+still cannot produce real values without S1–S3, so the checkpoint below is unchanged.
 
 **Total to the checkpoint: ~5–7 turns, ~0–210 credits.**
 
