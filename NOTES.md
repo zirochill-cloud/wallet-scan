@@ -175,6 +175,34 @@ not a health check: validate the required directory skeleton and rebuild the
 cluster when it is incomplete. Both failures were latent until the harness was
 actually executed; reasoning about the script had passed it twice.
 
+**Pasted transcripts carry credentials (2026-11-05, `.cloud-attachments/`).**
+A prior-session transcript imported into `.cloud-attachments/` (1,771,473 bytes,
+one line) contained the live Helius API key in plaintext **three times**, at byte
+offsets 11742, 39655 and 40613 — because the prior session had pasted the key
+into a diagnostic prompt and into a `.env` write. The file was untracked and was
+never committed (`git log --all -- .cloud-attachments` is empty), so the exposure
+was disk-side and provider-side, not in history. It still required rotation: the
+key was valid and readable for as long as the file existed. Rotated and revoked
+2026-11-05 — old sha256 prefix `7a016c39558863d4` is dead, the replacement was
+verified with `getHealth` returning 200 `ok` and hashes to a different prefix.
+
+**Rule:** any file imported from another environment is credential-swept before
+it is stored, with the UUID, `sk-`, JWT and `Authorization: Bearer` patterns. An
+untracked file is not a safe file; `.gitignore` prevents the commit, not the read.
+After a hit, rotation is the first action, not the last — deleting the file does
+not un-disclose the value.
+
+**Sweep for the value shape, not for the hash (2026-11-05).** The first sweep
+grepped the transcript for the key's sha256 prefix and got `0`, which reads as
+clean and is meaningless: the file holds the value, not its hash. The key was
+found by extracting every UUID-shaped candidate, hashing each, and comparing
+prefixes (1 of 7 matched `.env`). A negative hash-prefix grep is not evidence.
+
+**Imported files also carry the session's furniture.** The same transcript held
+five ad-tracking UUIDs (impression and creative IDs) and the freebuff project
+path id. Not credentials, but not design material either; they were redacted in
+`docs/RECOVERED_FROM_TRANSCRIPT.md` rather than carried into the repo.
+
 ---
 
 ## § PHASE1A_AUDIT
