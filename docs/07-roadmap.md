@@ -120,6 +120,23 @@ attribution; **transfer-in and airdrop exclusion**; per-metric data-quality flag
   separate entry conditions.
 - Metrics that cannot be computed are `null` **with a reason**, never `0`.
 
+**Status 2026-11-05 — the ledger exists; the explorer reconciliation does not.**
+`solscope/positions.py` reconstructs episodes from `swaps` with a FIFO lot ledger and
+`solscope positions` writes `positions` + `lot_matches` (rebuilt per wallet-token pair, because
+a late swap in mid-history invalidates the old FIFO assignment).
+
+| Exit criterion | Outcome |
+|---|---|
+| Three wallets hand-verified on an explorer | **Not started.** It needs decoded swaps in the database; nothing on this host has been ingested yet. Until it is done, no P&L number here is trusted. |
+| Transfer-in/airdrop dump is not profitable | **Met and tested.** Free inventory gets no cost basis, its proceeds are excluded from P&L, and a pure dump reports *None* — not a fabricated break-even. |
+| Exit and re-entry are two episodes | **Met and tested**, each with its own entry facts. |
+| Not-computable is null with a reason | **Met and tested** for uncovered sells, non-SOL quotes, buy fees inside the basis, and open positions without a mark. |
+
+Two scope notes. `equity_snapshots` (mark-to-market equity, the drawdown input) is **not wired** —
+it needs a price at every snapshot instant, so it depends on Phase 5's price series; unrealized P&L
+is computed only when a caller supplies both a mark and a SOL/USD rate. And episodes with a NULL
+`event_time` are skipped with a warning rather than stamped `now()`, per doc 04 §2.
+
 ## Phase 4 — Candidate discovery (1 week)
 
 Extract early buyers for shortlisted tokens (`getSignaturesForAddress` + `getTransaction`, 1 credit

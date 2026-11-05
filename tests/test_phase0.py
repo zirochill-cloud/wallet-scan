@@ -114,8 +114,10 @@ def test_cli_parser():
 
     # Live commands plus every roadmap stub. 'ingest' graduated from stub to
     # live command in Phase 1; the surface itself must stay complete.
-    # Live handlers by phase: 0 (migrate/doctor/budget), 1 (ingest), 2 (derive).
-    expected = {"migrate", "doctor", "budget", "ingest", "derive"} | set(STUB_COMMANDS)
+    # Live handlers by phase: 0 (migrate/doctor/budget), 1 (ingest), 2 (derive),
+    # 3 (positions).
+    expected = {"migrate", "doctor", "budget", "ingest", "derive",
+                "positions"} | set(STUB_COMMANDS)
     actions = [a for a in parser._subparsers._group_actions if hasattr(a, "choices")]
     registered = set(actions[0].choices) if actions else set()
     check("every documented subcommand registered", registered == expected,

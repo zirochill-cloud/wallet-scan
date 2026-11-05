@@ -194,6 +194,7 @@ run_suite() {  # run_suite <file> <required final marker>
 run_suite tests/test_schema_smoke.py   "ALL SCHEMA CHECKS PASSED"
 run_suite tests/test_ledger_live.py    "ALL LIVE LEDGER CHECKS PASSED"
 run_suite tests/test_anchor_writer.py  "ALL ANCHOR WRITER CHECKS PASSED"
+run_suite tests/test_positions.py      "ALL POSITION CHECKS PASSED"
 
 # --- 7. invariant ---------------------------------------------------------
 step "7/7 admin database untouched"

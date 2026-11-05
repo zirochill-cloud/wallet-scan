@@ -278,6 +278,36 @@ def _cmd_derive(ctx: Ctx, args: argparse.Namespace) -> int:
             conn.close()
 
 
+def _cmd_positions(ctx: Ctx, args: argparse.Namespace) -> int:
+    """Phase 3: rebuild position episodes from the decoded swaps table."""
+    from .positions import format_book, load_legs, load_transfers, rebuild, reconstruct
+
+    if ctx.dsn is None:
+        print("error: positions needs SOLSCOPE_PGDSN", file=sys.stderr)
+        return 1
+    conn = connect(ctx.dsn)
+    try:
+        if args.show:
+            if not args.wallet or not args.mint:
+                print("error: --show needs both --wallet and --mint", file=sys.stderr)
+                return 1
+            book = reconstruct(args.wallet, args.mint,
+                               load_legs(conn, args.wallet, args.mint),
+                               load_transfers(conn, args.wallet, args.mint),
+                               mark_price_usd=args.mark_usd)
+            print(format_book(book))
+            return 0
+        _pairs, written, warnings = rebuild(conn, wallet=args.wallet, mint=args.mint,
+                                            limit=args.limit,
+                                            log=lambda *m, **k: None)
+        for w in warnings[:20]:
+            print(f"warning: {w}", file=sys.stderr)
+        print(f"wrote {written} position episode(s)")
+        return 0
+    finally:
+        conn.close()
+
+
 def _cmd_stub(name: str) -> Callable[[Ctx, argparse.Namespace], int]:
     def run(ctx: Ctx, args: argparse.Namespace) -> int:
         print(
@@ -333,6 +363,17 @@ def build_parser() -> argparse.ArgumentParser:
     derive.add_argument("--json", default=None, metavar="PATH",
                         help="write the gate report as JSON evidence")
 
+    pos = sub.add_parser("positions", help="Phase 3 — FIFO position reconstruction")
+    pos.add_argument("--wallet", default=None, help="rebuild one wallet only")
+    pos.add_argument("--mint", default=None, help="rebuild one token only")
+    pos.add_argument("--limit", type=int, default=None,
+                     help="how many (wallet, token) pairs to rebuild, busiest first")
+    pos.add_argument("--show", action="store_true",
+                     help="print the reconstructed episodes instead of a summary "
+                          "(needs --wallet and --mint)")
+    pos.add_argument("--mark-usd", type=float, default=None,
+                     help="mark price for open inventory, used with --show")
+
     for name in STUB_COMMANDS:
         sub.add_parser(name, help=STUB_COMMANDS[name])
 
@@ -345,6 +386,7 @@ _HANDLERS: dict[str, Callable[[Ctx, argparse.Namespace], int]] = {
     "budget": _cmd_budget,
     "ingest": _cmd_ingest,
     "derive": _cmd_derive,
+    "positions": _cmd_positions,
     **{name: _cmd_stub(name) for name in STUB_COMMANDS},
 }
 
