@@ -266,6 +266,83 @@ was found while scoping Phase 1b, not recovered.
 
 ---
 
+## § Aggregation — S5 (implemented 2026-11-05)
+
+Per-anchor metrics become one wallet-level number here. The full specification — the exact
+signatures, the rule list and the hand-computed fixtures — is recovered verbatim in
+**`docs/RECOVERED_FROM_TRANSCRIPT.md` §7**; this section states the rules the code enforces and
+records where the recovered spec had to be reconciled with the schema that actually exists.
+
+### The three reductions
+
+| Metric | Reduction | Defaults |
+|---|---|---|
+| `max_subsequent_return` | geometric mean of `(1 + winsorised r)`, minus 1, floored at 0 | `winsorize_at=100`, `min_anchors=2` |
+| `buyer_rank_at_entry` | median percentile across computed anchors | `min_anchors=2` |
+| `pct_entries_before_volume_spike` | mean fraction across computed anchors | `min_anchors=2` |
+
+A geometric mean, not an arithmetic one, because the wallet's outcome across anchors compounds:
+three 5x entries (4.0) beat one 99x and two duds (≈3.64). Winsorising at 100 keeps a single
+lottery ticket from dominating every comparison it appears in. `buyer_rank_at_entry` uses a median
+because rank is an ordering — one 0.001 first-buy should not drag the centre away from the
+wallet's ordinary behaviour. `pct_entries_before_volume_spike` is already a bounded fraction, so
+the mean is the honest centre.
+
+### `not_rankable` versus `not_computable`
+
+- **`not_computable`** — no anchor produced a number at all (including the empty case). Coverage is
+  0.0, not 1.0: nothing was measurable.
+- **`not_rankable`** — something was measured, but fewer than `min_anchors` anchors were. The value
+  is `NULL` and the counts still report what existed; one anchor is an anecdote, not a ranking.
+
+Neither ever stores 0.0. A missing number must stay distinguishable from a measured bad one — the
+same rule the per-anchor writers already follow.
+
+### Weight re-normalisation
+
+When a metric is `not_rankable` or `not_computable`, its weight leaves the `early_entry` blend and
+the remaining computed metrics are re-scaled to the dimension's original weight. Scoring a missing
+metric as 0 would convert a coverage gap into a behavioural verdict. If every metric in a dimension
+is uncomputable, the dimension is uncomputable and the wallet takes the confidence penalty rather
+than a score.
+
+### Confidence, not score
+
+Two aggregate-level facts enter `confidence` and never the score itself:
+`anchor_sample_size` = `anchor_count_computed`, and `anchor_coverage` = `coverage`. A 4.0 computed
+from two anchors out of nine is not the same claim as a 4.0 from nine, and the confidence score is
+where that difference belongs. As recorded in §Q4, the exact blend of these two into the
+confidence figure remains the consumer's decision.
+
+### Reconciliation against the shipped schema
+
+Three points where the recovered §7 assumed something the database does not have:
+
+1. **Aggregates do not live in `sub_scores`.** §7's writer was specified to write to `sub_scores`
+   with columns `(wallet, metric_name, rule_version, value, status, anchor_count_computed,
+   anchor_count_excluded, evidence)`. `sub_scores` as built is a *dimension* table: `score_id NOT
+   NULL` referencing `scores(id)`, `dimension` CHECKed to the eight scoring dimensions, and
+   `UNIQUE (score_id, dimension)`. A wallet aggregate has no score run and no dimension. Storing one
+   there would need a fabricated `scores` row and a widened dimension CHECK. `wallet_metrics` is one
+   JSONB blob per snapshot, and `anchor_wallet_metrics` is `NOT NULL anchor_id` — per-anchor by
+   construction. So `schema/003_wallet_aggregates.sql` adds **`wallet_aggregates`**, keyed
+   `(wallet, metric_name, rule_version)`, with `coverage NUMERIC(6,4)` and `evidence JSONB` as an
+   array of per-anchor traces.
+2. **Status vocabulary.** Aggregates use their own enum, `wallet_aggregate_status`
+   (`computed` / `not_rankable` / `not_computable`). It cannot reuse `anchor_metric_status`, whose
+   members (`INSUFFICIENT_WINDOW`, `NO_OBSERVATIONS`, `NOT_COMPUTABLE`) describe why *one anchor's*
+   window produced nothing — a different question from whether a wallet can be ranked.
+3. **The `[-1, 4, 4]` fixture.** §7 records the total-loss case as `0`; the literal
+   `geomean(1+r) - 1` gives `-1`. The code returns `0` (the product collapses to 0 and the result is
+   floored there) to match the recorded fixture. Flagged here rather than silently chosen: if the
+   intent was `-1`, the floor is a one-line change in `_geometric_mean_minus_one`.
+
+**Code:** `solscope/aggregation.py` (reductions, `AggregateResult`, per-anchor trace),
+`solscope/anchor_writer.write_aggregate` (idempotent upsert), `tests/test_aggregation.py` (fixtures
+above plus DB idempotency), and the fifth suite in `bootstrap_db.sh`.
+
+---
+
 ## Q5 — What is the cost model under `solscope/`'s primitives?
 
 `config/budget.yaml` charges: `get_signatures_for_address` **1**, `get_transaction` **1**,
