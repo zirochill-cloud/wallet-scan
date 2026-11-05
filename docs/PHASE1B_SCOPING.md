@@ -264,6 +264,60 @@ trade", requirements §A).
 level once the three metrics are registered. The prior session never flagged the overlap; it
 was found while scoping Phase 1b, not recovered.
 
+### The consumer — S5 remainder (implemented 2026-11-05)
+
+`solscope/consumer.py` turns the two things that now exist — stored aggregates and cohort
+benchmarks — into `scores` / `sub_scores` / `score_evidence` rows. It reads
+`wallet_aggregates` at one `rule_version`, plus `positions` + `tokens` +
+`cohort_benchmarks` for token selection, and writes through `score_runs` and
+`score_config_versions` so every number is attributable to a weight set.
+
+**Unit mapping.** The three aggregates have incompatible units, so each becomes a
+bounded credit in [0, 1] before weighting, using no new tunable constant (the config
+is unchanged):
+
+| Aggregate | Credit | Reads as |
+|---|---|---|
+| `max_subsequent_return` | `r / (1 + r)` | 1x → 0.50, 4x → 0.80, 99x → 0.99 |
+| `buyer_rank_at_entry` | `1 − percentile` | 0.001 (first buyer) → 0.999 |
+| `pct_entries_before_volume_spike` | the fraction | 0.5 → 0.50 |
+
+Composite = `100 × Σ(weight_used × credit)`, then shrunk toward the neutral prior with
+the configured `k` and `prior` (`shrunk = n/(n+k)·raw + k/(n+k)·prior`). Shrinkage is
+applied because a phase whose whole premise is "small anchor counts" cannot skip the
+anti-luck mechanism.
+
+**Weight re-normalisation** is the rule from § Aggregation, implemented per dimension:
+absent, non-computed, or weight-0 metrics leave the blend and the survivors are rescaled
+to sum to exactly 1.0. A wallet whose only computed metric is `max_subsequent_return`
+still gets a dimension value with weight 1.0 on that metric — flagged in the explanation
+(`metrics_used=1/3`) rather than silently treated as full coverage.
+
+**What a `scores` row says this phase.** Five of seven dimensions have no implementation
+yet, so `overall_score` is the neutral `50.00`, `confidence_score` is `0.00`, `band` and
+`recommendation` are `exclude`, and `gated_by` names both reasons
+(`incomplete_score: missing_dimensions=…` and `confidence<25 (blend open…)`). A wallet
+with no computable `early_entry` gets **no row at all**. The real output is the
+sub-scores: `early_entry`, `token_selection`, and a `confidence` row that carries the
+two factors in its explanation.
+
+**Confidence: computed, stored, not blended.** `anchor_sample_size =
+min(1, computed_anchors / 10)` and `anchor_coverage = computed / (computed + excluded)`
+are computed per wallet and stored — as `score_evidence` rows (`subject_id` =
+`anchor_sample_size` / `anchor_coverage`) and in the `confidence` sub-score's
+explanation. They are **not** blended into `confidence_score`: the blend formula is open,
+and the sub-score's `confidence` column is left NULL rather than filled with an invented
+number. *anchor_sample_size and anchor_coverage are computed but not yet blended into
+confidence. The blend formula is open. The consumer stores them as evidence so a future
+turn can blend without re-computing.*
+
+**Run identity and idempotency.** A run is found by
+`(config_version, as_of, window_start, window_end, experiment_label)` with
+`experiment_label = 'aggregate_rule:<rule_version>'` — deliberately non-NULL, because
+NULLs are distinct in a UNIQUE constraint and a NULL label would make every re-run a new
+run. Scores and sub-scores upsert, evidence is replaced, and rows for wallets that no
+longer qualify are pruned, so a re-run converges instead of accumulating.
+
 ---
 
 ## § Aggregation — S5 (implemented 2026-11-05)
@@ -566,7 +620,7 @@ Effort in **turns** (agent turns of work), not hours. Cost is Helius credits.
 | **S2** | mint → pool resolution + ambiguity diagnostic; fix `token_age_seconds` semantics | 1 | 0 | S1 |
 | **S3** | Price series from swap ratios over archived txs; positions reconstruction | 1–2 | 0 | S2 |
 | **S4** | Quality filter, genesis-burst first-class, against **mocked** positions — **DONE 2026-10-28** | 1 | 0 | — *(parallel)* |
-| **S5** | `scoring.yaml` §5 correction + `metric_definitions` + scoring consumer → `scores` — **config + metric bodies DONE 2026-10-28; consumer still open** | 1 | 0 | — *(parallel)* |
+| **S5** | `scoring.yaml` §5 correction + `metric_definitions` + scoring consumer → `scores` — **config + metric bodies DONE 2026-10-28; consumer DONE 2026-11-05; `metric_definitions` registration still open (data step)** | 1 | 0 | — *(parallel)* |
 | **S6** | Anchor registry DDL + end-to-end mocked-anchor run — **DDL + writers DONE 2026-10-31; end-to-end mocked-anchor run still open (needs S1–S3 for real values)** | 1 | 0 | S3, S4, S5 |
 | **S7** | *Only if anchors stay unsupplied:* screening proof on 3 independent anchors | 1–2 | ~3,000 | S6 |
 
@@ -581,10 +635,11 @@ single-anchor clean wallets reported as not_computable in their own bucket. That
 calibration validates the *implementation against the spec*, **not** N=2/Y=60: both sets
 are synthetic, so `NOTES.md` § `QUALITY_FILTER_PENDING` stays open. **S5 is partly
 complete:** `config/scoring.yaml` carries the §5 weights, `solscope/metrics.py` implements
-all three metric bodies with hand-computed tests (`tests/test_phase1b_metrics.py`), and the
-double-count resolution is recorded in Q4 — **the scoring consumer that reads those
-metrics and writes `scores` is still open**, which is the remainder of S5. S1–S3 remain
-untouched.
+all three metric bodies with hand-computed tests (`tests/test_phase1b_metrics.py`), andthe double-count resolution is recorded in Q4. **Status 2026-11-05: the consumer is built**
+(`solscope/consumer.py`, `tests/test_scoring_consumer.py`, sixth harness suite) — it reads
+aggregates plus cohort benchmarks and writes `scores` / `sub_scores` / `score_evidence`.
+What is still open in S5 is the `metric_definitions` registration (a data step) and the
+confidence blend. S1–S3 remain untouched.
 
 **Status 2026-10-31. S6's storage half is complete.** `schema/002_anchor_registry.sql` adds
 `anchors`, `anchor_wallet_verdicts` and `anchor_wallet_metrics`; `solscope/anchor_writer.py`
