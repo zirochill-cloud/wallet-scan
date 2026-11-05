@@ -13,7 +13,7 @@
 #   4. start the server on 127.0.0.1:5433
 #   5. run `solscope migrate` against its own scratch database, assert >= 40
 #      tables, assert every migration file was recorded, assert the anchor
-#      registry's three tables exist# 6. run the five DB suites, each of which must reach its final PASS marker
+#      registry's three tables exist# 6. run the six DB suites, each of which must reach its final PASS marker
 #   7. assert the admin database still has 0 public tables
 # and stop the server on the way out, pass or fail.
 #
@@ -196,11 +196,12 @@ run_suite tests/test_ledger_live.py    "ALL LIVE LEDGER CHECKS PASSED"
 run_suite tests/test_anchor_writer.py  "ALL ANCHOR WRITER CHECKS PASSED"
 run_suite tests/test_positions.py      "ALL POSITION CHECKS PASSED"
 run_suite tests/test_aggregation.py    "ALL AGGREGATION CHECKS PASSED"
+run_suite tests/test_scoring_consumer.py "ALL SCORING CONSUMER CHECKS PASSED"
 
 # --- 7. invariant ---------------------------------------------------------
 step "7/7 admin database untouched"
 n=$(psqlq postgres "select count(*) from information_schema.tables where table_schema='public'")
 [ "$n" = "0" ] || die "expected 0 public tables in 'postgres', got $n — a suite leaked into the admin database"
-echo "postgres: 0 public tables — both suites used their own scratch databases"
+echo "postgres: 0 public tables — every suite used its own scratch database"
 
-printf '\nDB HARNESS GREEN: migrations + schema smoke + live ledger + anchor writer + positions + aggregation, all real.\n'
+printf '\nDB HARNESS GREEN: migrations + schema smoke + live ledger + anchor writer + positions + aggregation + scoring consumer, all real.\n'
