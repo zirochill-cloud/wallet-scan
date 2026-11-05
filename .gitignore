@@ -29,3 +29,4 @@ spikes/cache2/
 data/
 data-*.log
 data-*.pid
+.cloud-attachments/
