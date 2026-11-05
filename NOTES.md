@@ -131,6 +131,22 @@ the loss after further work was done. `git push` costs nothing and eliminates it
 `1944c74` and verified with `git ls-remote`. Mitigations (b) and (c) are
 procedural and not yet automated.*
 
+**2026-11-05: Design specs must be committed as they are written.** The aggregation
+spec sat in this thread for several turns before it was committed to `docs/`. When
+the cloud environment was killed, the only durable copy was the transcript import in
+`.cloud-attachments/`. The recovery turn converted that into
+`docs/RECOVERED_FROM_TRANSCRIPT.md`, which is the right outcome — but the correct
+discipline is to commit a design spec to `docs/` **in the turn it is approved**, not
+after a thread-loss event. Any spec that guides more than one turn of work should
+exist in git the turn it is agreed. A conversation is not storage, and a transcript
+import is a copy of a conversation, not a document; recovering this one depended on
+the transcript still existing, which was luck rather than process.
+
+*Status: closed 2026-11-05 — the spec is committed as
+`docs/RECOVERED_FROM_TRANSCRIPT.md` §7, and the implementation in the same turn
+(`solscope/aggregation.py`, `schema/003_wallet_aggregates.sql`) is derived from that
+committed text rather than from the transcript.*
+
 ---
 
 ## § ANTI_PATTERNS
