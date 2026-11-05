@@ -306,6 +306,47 @@ metric as 0 would convert a coverage gap into a behavioural verdict. If every me
 is uncomputable, the dimension is uncomputable and the wallet takes the confidence penalty rather
 than a score.
 
+### The compound reading's sharp edge
+
+The geometric mean has one property worth stating before real data arrives: **one total loss
+zeroes the whole aggregate**. `[4]*9 + [-1]` returns `0`, which is *worse* than a clean
+`[4, 4, 4]` (4.0) even though nine of the ten anchors ran 5x. That is the compound reading
+doing what it says — the product is zero — but it is not obviously the right summary for
+"how good is this wallet at entering early".
+
+Two things follow, and neither is a formula change:
+
+1. **`r < 0` is a data anomaly, not a market outcome.** `max_subsequent_return` is
+   peak-based; a peak cannot be below entry, so a negative value means a bad price series or a
+   bad window, not a position that lost money. Each observed `r < 0` emits a structured warning
+   (`metric=max_subsequent_return`, `wallet`, `anchor_id`, `value`) and is flagged
+   `anomaly: negative_return` in the aggregate's evidence. The value is still floored at 0 and
+   still counted as computed — dropping it would silently shrink `anchor_count_computed` and
+   turn a data fault into an apparent coverage gap.
+2. **Revisit only when real anchor data exists.** If legitimate `r < 0` values turn out to be
+   common, the compound reading is the wrong summary for this purpose and the aggregator should
+   move to an arithmetic mean or an explicit consistency-plus-magnitude model. Do not change it
+   pre-emptively; ship the current behaviour, watch the warnings, decide on evidence.
+   Recorded in `NOTES.md` § `AGGREGATION_EDGE_CASES`.
+
+### Where aggregates live, and why not `wallet_metrics`
+
+Two tables now hold wallet-level numbers, and they answer different questions:
+
+| | `wallet_metrics` | `wallet_aggregates` |
+|---|---|---|
+| Grain | one snapshot per `(address, as_of, window_start, window_end, pipeline_version)` | one row per `(wallet, metric_name, rule_version)` |
+| Payload | a JSONB blob of many metrics, plus a JSONB quality blob and sample sizes | one metric, its own status, counts, coverage and per-anchor evidence |
+| Writes | snapshot-append; a re-run adds a snapshot | upsert; a re-run rewrites the row, a version bump adds one |
+| Answers | "what did the pipeline measure at time T?" | "what is this wallet's value for this metric, under this rule set?" |
+
+An aggregate *could* be squeezed into `wallet_metrics.metrics` as one more key, and it would be
+wrong in a way that is hard to undo later: per-metric status, per-metric re-run idempotency and
+the `computed ⇔ value IS NOT NULL` invariant are not expressible as constraints on a JSONB
+key, so "not measured" and "measured as 0" would both be absent keys. `wallet_aggregates`
+exists so the database, not a reader's discipline, enforces that distinction. The consumer reads
+`wallet_aggregates`; `wallet_metrics` remains the pipeline's measurement log.
+
 ### Confidence, not score
 
 Two aggregate-level facts enter `confidence` and never the score itself:

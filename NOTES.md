@@ -149,6 +149,36 @@ committed text rather than from the transcript.*
 
 ---
 
+## § AGGREGATION_EDGE_CASES
+
+**2026-11-05. Why `max_subsequent_return` floors at 0, and what would change that.**
+
+`max_subsequent_return` is peak-based: a peak cannot be below entry, so a legitimate
+`r = -1` should never occur. Flooring at 0 reads an anomaly as "no forward run",
+which is the correct semantic for this metric; flooring at −1 would read it as
+total loss, which is both the wrong semantic and does not map onto a 0–100 score.
+The recovered fixture (docs/RECOVERED_FROM_TRANSCRIPT.md §7) specifies 0 and the
+implementation matches.
+
+**The sharp edge:** the compound (geometric mean) reading is a product, so
+`[4]*9 + [-1]` returns 0 — worse than a clean `[4, 4, 4]` at 4.0, despite nine of
+ten anchors having run 5x. If real anchor data shows legitimate `r < 0` values with
+any frequency, the compound reading is the wrong summary for this purpose and the
+aggregator should move to an arithmetic mean or an explicit
+consistency-plus-magnitude model. **Do not change the formula pre-emptively.**
+
+**Observability:** every observed `r < 0` emits a structured warning from
+`solscope.aggregation` with `metric=max_subsequent_return`, `wallet`, `anchor_id`
+and `value`, and is flagged `anomaly: negative_return` in the aggregate's evidence
+trace. The anchor still counts as computed, because dropping it would shrink
+`anchor_count_computed` and make a data fault look like reduced coverage.
+Covered by `tests/test_aggregation.py` (`[4]*9 + [-1] -> 0`, warning fires once,
+names all four fields, and no warning for a clean set).
+
+Revisit condition: real anchor data with more than incidental negative values.
+
+---
+
 ## § ANTI_PATTERNS
 
 **Harness instability: malformed tool calls (2026-10-26).** Five structurally
