@@ -13,8 +13,7 @@
 #   4. start the server on 127.0.0.1:5433
 #   5. run `solscope migrate` against its own scratch database, assert >= 40
 #      tables, assert every migration file was recorded, assert the anchor
-#      registry's three tables exist
-#   6. run the three DB suites, each of which must reach its final PASS marker
+#      registry's three tables exist# 6. run the five DB suites, each of which must reach its final PASS marker
 #   7. assert the admin database still has 0 public tables
 # and stop the server on the way out, pass or fail.
 #
@@ -166,19 +165,20 @@ echo "solscope_bootstrap: $n tables"
 # Every migration file must be RECORDED, not merely present on disk. A new
 # schema file that silently fails to apply would otherwise show up as "a couple
 # of tables missing" much later, in a test that is about something else.
-for m in 001_init 002_anchor_registry; do
+for m in 001_init 002_anchor_registry 003_wallet_aggregates; do
   found=$(psqlq solscope_bootstrap "select count(*) from schema_migrations where name='${m#*_}'") \
     || die "could not read schema_migrations"
   [ "$found" = "1" ] || die "migration $m was not recorded (schema_migrations has $found rows for it)"
   echo "applied: $m.sql"
 done
 
-# The anchor registry's three tables must exist in the scratch database.
-for t in anchors anchor_wallet_verdicts anchor_wallet_metrics; do
+# The anchor registry's three tables must exist in the scratch database, plus the
+# wallet-level aggregate table that 003 adds.
+for t in anchors anchor_wallet_verdicts anchor_wallet_metrics wallet_aggregates; do
   ok=$(psqlq solscope_bootstrap "select to_regclass('public.$t') is not null")
   [ "$ok" = "t" ] || die "table $t is missing after migration"
 done
-echo "anchor registry: anchors, anchor_wallet_verdicts, anchor_wallet_metrics present"
+echo "anchor registry: anchors, anchor_wallet_verdicts, anchor_wallet_metrics, wallet_aggregates present"
 
 # --- 6. the two DB suites -------------------------------------------------
 step "6/7 DB suites"
@@ -195,6 +195,7 @@ run_suite tests/test_schema_smoke.py   "ALL SCHEMA CHECKS PASSED"
 run_suite tests/test_ledger_live.py    "ALL LIVE LEDGER CHECKS PASSED"
 run_suite tests/test_anchor_writer.py  "ALL ANCHOR WRITER CHECKS PASSED"
 run_suite tests/test_positions.py      "ALL POSITION CHECKS PASSED"
+run_suite tests/test_aggregation.py    "ALL AGGREGATION CHECKS PASSED"
 
 # --- 7. invariant ---------------------------------------------------------
 step "7/7 admin database untouched"
@@ -202,4 +203,4 @@ n=$(psqlq postgres "select count(*) from information_schema.tables where table_s
 [ "$n" = "0" ] || die "expected 0 public tables in 'postgres', got $n — a suite leaked into the admin database"
 echo "postgres: 0 public tables — both suites used their own scratch databases"
 
-printf '\nDB HARNESS GREEN: migrations + schema smoke + live ledger, all real.\n'
+printf '\nDB HARNESS GREEN: migrations + schema smoke + live ledger + anchor writer + positions + aggregation, all real.\n'
