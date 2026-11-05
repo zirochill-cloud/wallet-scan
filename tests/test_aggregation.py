@@ -27,6 +27,8 @@ Requires (DB half only): psycopg[binary] and either $SOLSCOPE_TEST_PGDSN or pgse
 """
 from __future__ import annotations
 
+import contextlib
+import logging
 import os
 import pathlib
 import sys
@@ -71,12 +73,18 @@ def close(actual: Decimal | None, expected: str, tol: str = "1e-9") -> bool:
     return abs(actual - Decimal(expected)) <= Decimal(tol)
 
 
-def rows(values, metric: str = MR, *, window_days: int | None = None) -> list[AnchorMetricRow]:
+def rows(
+    values, metric: str = MR, *, window_days: int | None = None, wallet: str | None = None
+) -> list[AnchorMetricRow]:
     """Build one row per value; ``None`` becomes an excluded (NOT_COMPUTABLE) anchor."""
     out: list[AnchorMetricRow] = []
     for i, value in enumerate(values, start=1):
         if value is None:
-            out.append(AnchorMetricRow(anchor_id=i, metric_name=metric, status="NOT_COMPUTABLE"))
+            out.append(
+                AnchorMetricRow(
+                    anchor_id=i, metric_name=metric, status="NOT_COMPUTABLE", wallet=wallet
+                )
+            )
         else:
             out.append(
                 AnchorMetricRow(
@@ -85,9 +93,33 @@ def rows(values, metric: str = MR, *, window_days: int | None = None) -> list[An
                     status="computed",
                     value=Decimal(str(value)),
                     window_days=window_days,
+                    wallet=wallet,
                 )
             )
     return out
+
+
+@contextlib.contextmanager
+def captured_warnings():
+    """Collect ``solscope.aggregation`` warnings without touching root logging config."""
+    logger = logging.getLogger("solscope.aggregation")
+    records: list[logging.LogRecord] = []
+
+    class _Collector(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    handler = _Collector()
+    previous_level, previous_propagate = logger.level, logger.propagate
+    logger.addHandler(handler)
+    logger.setLevel(logging.WARNING)
+    logger.propagate = False
+    try:
+        yield records
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(previous_level)
+        logger.propagate = previous_propagate
 
 
 def expect(exc_type, fn, name: str) -> None:
@@ -137,8 +169,35 @@ def logic_checks() -> None:
               for e in capped.evidence),
           f"evidence={capped.evidence}")
 
-    r = aggregate_max_subsequent_return(rows([-1, 4, 4]))
+    with captured_warnings() as warned:
+        r = aggregate_max_subsequent_return(rows([-1, 4, 4], wallet="WalletNeg111"))
     check("[-1, 4, 4] -> 0 (product collapses)", close(r.value, "0"), f"value={r.value}")
+    check("a negative r raises exactly one warning", len(warned) == 1, f"{len(warned)} records")
+    if warned:
+        message = warned[0].getMessage()
+        check("the warning names metric, wallet, anchor and value",
+              all(part in message for part in
+                  ("metric=max_subsequent_return", "wallet=WalletNeg111",
+                   "anchor_id=1", "value=-1")),
+              message)
+    check("the offending anchor is flagged in the trace",
+          r.evidence[0].get("anomaly") == "negative_return" and "anomaly" not in r.evidence[1],
+          f"evidence={r.evidence}")
+
+    with captured_warnings() as warned:
+        edge = aggregate_max_subsequent_return(rows([4] * 9 + [-1], wallet="WalletEdge111"))
+    check("[4]*9 + [-1] -> 0", close(edge.value, "0"), f"value={edge.value}")
+    check("one bad anchor out of ten still counts as computed",
+          (edge.anchor_count_computed, edge.status) == (10, "computed"),
+          f"{edge.anchor_count_computed}/{edge.status}")
+    clean = aggregate_max_subsequent_return(rows([4, 4, 4]))
+    check("the anomalous wallet ranks below a clean [4, 4, 4] (4.0)",
+          clean.value > edge.value, f"{clean.value} vs {edge.value}")
+    check("exactly one warning for the single negative r", len(warned) == 1, f"{len(warned)}")
+
+    with captured_warnings() as warned:
+        aggregate_max_subsequent_return(rows([4, 4, 4]))
+    check("no warning when every r is non-negative", not warned, f"{len(warned)} records")
 
     r = aggregate_max_subsequent_return(rows([4]))
     check("[4] -> not_rankable", r.status == "not_rankable" and r.value is None,

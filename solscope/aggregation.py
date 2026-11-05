@@ -38,6 +38,7 @@ of aggregating is to say something that survives a second observation.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, Iterable, Literal, Sequence
@@ -67,6 +68,9 @@ WINSORIZE_AT: Decimal = Decimal("100")
 
 #: A return cannot be worse than total loss.
 _MIN_RETURN: Decimal = Decimal("-1")
+
+#: Logger used for the one anomaly this module can see and must not hide.
+_LOG = logging.getLogger(__name__)
 
 #: Statuses ``anchor_writer.write_metric`` may have written for an anchor.
 _ANCHOR_STATUSES: frozenset[str] = frozenset(
@@ -99,6 +103,9 @@ class AnchorMetricRow:
     value: Decimal | None = None
     window_days: int | None = None
     peak_day: int | None = None
+    #: Carried only so the negative-return warning can name the wallet it came from;
+    #: aggregation itself never reads it.
+    wallet: str | None = None
 
     def __post_init__(self) -> None:
         if self.metric_name not in {_METRIC_MAX_RETURN, _METRIC_BUYER_RANK, _METRIC_PREVOLUME}:
@@ -294,6 +301,12 @@ def aggregate_max_subsequent_return(
 
     ``winsorize_at`` caps each anchor's multiple; ``min_anchors`` is the smallest
     number of computed anchors that may be called a ranking.
+
+    A negative ``r`` is impossible from a legitimate window — a peak cannot be below
+    entry — so each one is logged as a structured warning naming the wallet, the
+    anchor and the value, and flagged ``anomaly: negative_return`` in the trace. The
+    value is still floored at 0 rather than dropped: dropping it would silently
+    reduce ``anchor_count_computed`` and make a data fault look like coverage.
     """
     metric = _METRIC_MAX_RETURN
     rows = _select(per_anchor, metric)
@@ -305,9 +318,30 @@ def aggregate_max_subsequent_return(
         if row.status != "computed":
             traces.append(_trace(row))
             continue
+        if row.value is not None and row.value < 0:
+            # Not silently floored: a peak below entry cannot come from an honest
+            # window, so this is a data anomaly and it must be visible where the
+            # pipeline can act on it. See NOTES.md § AGGREGATION_EDGE_CASES.
+            _LOG.warning(
+                "negative max_subsequent_return: metric=%s wallet=%s anchor_id=%s value=%s "
+                "— treated as no forward run (floored at 0)",
+                metric,
+                row.wallet,
+                row.anchor_id,
+                row.value,
+                extra={
+                    "metric": metric,
+                    "wallet": row.wallet,
+                    "anchor_id": row.anchor_id,
+                    "anchor_value": str(row.value),
+                },
+            )
         capped = _winsorized(row, winsorize_at)
         values.append(capped)
-        traces.append(_trace(row, winsorized_value=str(capped)))
+        extra: dict[str, Any] = {"winsorized_value": str(capped)}
+        if row.value is not None and row.value < 0:
+            extra["anomaly"] = "negative_return"
+        traces.append(_trace(row, **extra))
 
     return _guarded(
         metric,
