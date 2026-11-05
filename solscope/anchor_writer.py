@@ -31,6 +31,7 @@ import datetime as _dt
 from dataclasses import dataclass
 from typing import Any, Mapping, Protocol
 
+from .aggregation import AGGREGATE_STATUSES, AggregateResult
 from .quality_filter import RuleId, WalletVerdict
 
 __all__ = [
@@ -39,6 +40,7 @@ __all__ = [
     "METRIC_STATUSES",
     "AnchorInput",
     "AnchorWriterError",
+    "write_aggregate",
     "write_anchor",
     "write_metric",
     "write_verdict",
@@ -339,6 +341,80 @@ def write_metric(
     conn.commit()
 
 
+def write_aggregate(
+    conn,
+    wallet: str,
+    aggregate: AggregateResult,
+    rule_version: str,
+) -> None:
+    """Record one wallet-level aggregate, upserting on re-run. See schema/003.
+
+    Idempotent on ``(wallet, metric_name, rule_version)``: a re-run under the same
+    rule version rewrites its row, and a version bump adds one. Aggregates computed
+    under different rules are not comparable, so history is kept by version rather
+    than overwritten.
+
+    Status and value are checked here as well as by the schema, because the failure
+    worth catching is semantic: ``not_rankable`` with a value would make "not enough
+    anchors" indistinguishable from "measured low", which is exactly the confusion
+    the aggregate statuses exist to prevent.
+
+    Rolls back on failure so a caller's connection stays usable — a constraint
+    violation aborts the transaction, and the next write would otherwise fail with
+    ``InFailedSqlTransaction`` and bury the real cause.
+    """
+    if not rule_version:
+        raise AnchorWriterError(
+            "rule_version is required — an unversioned aggregate cannot be re-derived"
+        )
+    if aggregate.metric_name not in METRIC_NAMES:
+        raise AnchorWriterError(f"unknown metric {aggregate.metric_name!r}")
+    if aggregate.status not in AGGREGATE_STATUSES:
+        raise AnchorWriterError(f"unknown aggregate status {aggregate.status!r}")
+    if (aggregate.status == "computed") != (aggregate.value is not None):
+        raise AnchorWriterError(
+            f"{aggregate.metric_name}: status {aggregate.status!r} with value "
+            f"{aggregate.value!r} — computed requires a value, every other status forbids one"
+        )
+    if not 0.0 <= aggregate.coverage <= 1.0:
+        raise AnchorWriterError(f"coverage {aggregate.coverage!r} is not a fraction")
+
+    try:
+        _ensure_wallet(conn, wallet)
+        conn.execute(
+            """
+            INSERT INTO wallet_aggregates (
+                wallet, metric_name, rule_version, value, status,
+                anchor_count_computed, anchor_count_excluded, coverage, evidence
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+            ON CONFLICT (wallet, metric_name, rule_version) DO UPDATE SET
+                value                 = EXCLUDED.value,
+                status                = EXCLUDED.status,
+                anchor_count_computed = EXCLUDED.anchor_count_computed,
+                anchor_count_excluded = EXCLUDED.anchor_count_excluded,
+                coverage              = EXCLUDED.coverage,
+                evidence              = EXCLUDED.evidence,
+                computed_at           = now()
+            """,
+            (
+                wallet,
+                aggregate.metric_name,
+                rule_version,
+                aggregate.value,
+                aggregate.status,
+                aggregate.anchor_count_computed,
+                aggregate.anchor_count_excluded,
+                aggregate.coverage,
+                _json_rows(aggregate.evidence),
+            ),
+        )
+    except Exception:
+        _rollback(conn)
+        raise
+    conn.commit()
+
+
 def _rollback(conn) -> None:
     """Leave the connection usable after a failed write.
 
@@ -358,3 +434,14 @@ def _json(evidence: Mapping[str, Any] | None) -> str:
     import json
 
     return json.dumps(dict(evidence or {}), default=str, sort_keys=True)
+
+
+def _json_rows(evidence: Any) -> str:
+    """Serialise the aggregate's per-anchor trace, which is a list, not an object.
+
+    ``sort_keys`` orders the keys inside each trace row; the rows themselves keep
+    anchor order, because that order is the wallet's own history.
+    """
+    import json
+
+    return json.dumps(list(evidence or []), default=str, sort_keys=True)
