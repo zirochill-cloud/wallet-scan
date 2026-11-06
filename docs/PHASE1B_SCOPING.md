@@ -365,6 +365,19 @@ evidence; the gate excludes everything because the confidence it needs does not 
 A wallet with no computable `early_entry` never reaches the gate at all, because it gets no
 `scores` row.
 
+**D5 — the composite's sample factor is calibrated to five anchors, and the gate's anchor
+floor is its own key.** The implemented `anchor_sample_size` is `min(1, anchors/10)`, while
+shrinkage uses `n/(n+5)`; the two were calibrated to different anchor scales, and the `/10`
+matched no config key at all. Adopted (design here, implementation in S12b):
+`min(1, distinct_computed_anchors / sample_full_credit_at)` with `sample_full_credit_at: 5`,
+so the factor ranges 0.40–1.00 across the expected 2–5 anchors instead of 0.20–0.50 —
+informative where the discrimination actually is. The gate's "at least three anchors" rule
+becomes a separate key, `min_distinct_anchors: 3`, and is **not** derived from the divisor: a
+divisor answers "how many anchors is plenty", a gate answers "how few is too few to rank",
+and tying them together makes one calibration edit silently move the validity floor. At n=2
+the factor is 0.40 rather than 0.20; the gate still excludes, so this changes confidence, not
+who ranks. See `docs/PHASE1B_SECTION12.md` §2.3 and §4.
+
 **Penalise thinness at one semantic level, not two.** With a gate that can exclude a thin
 wallet, shrinkage should not also drag it to the middle — otherwise a wallet is punished
 once for having few anchors and again for being shrunk toward the prior. `k = 5` keeps a
