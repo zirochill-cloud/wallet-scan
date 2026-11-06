@@ -16,12 +16,15 @@ Layer 2 runs the consumer against real PostgreSQL with four wallets:
 Hand-computed expectations (see the comments beside each check):
 
 * A: credits 4/(1+4)=0.80, 1-0.02=0.98, 0.50 at weights 0.40/0.30/0.30
-  -> 76.40 raw; n=9 anchors, k=15, prior=50 -> 0.375*76.40 + 0.625*50 = 59.90.
+  -> 76.40 raw; 3 anchors measured on 3 metrics, k=5, prior=50
+  -> 0.375*76.40 + 0.625*50 = 59.90.  (The sample is 3, not 9: one anchor
+  measured on three metrics is one observation.  Factor 3/(3+5) = 0.375.)
 * B: buyer rank dropped, weights re-normalised to 0.5714285714/0.4285714286
-  -> 100*(0.5714285714*0.80 + 0.4285714286*0.50) = 67.1428571; n=6
-  -> 0.2857142857*67.1428571 + 0.7142857143*50 = 54.89796.
+  -> 100*(0.5714285714*0.80 + 0.4285714286*0.50) = 67.1428571; 3 anchors
+  -> 0.375*67.1428571 + 0.625*50 = 56.4285714 (56.43 stored).
 * D: excesses ln2, 0, ln2 -> mean 2ln2/3 = 0.4620981
-  -> 100/(1+exp(-0.4620981/0.5)) = 71.5896; n=3 -> 53.5983.
+  -> 100/(1+exp(-0.4620981/0.5)) = 71.5896; 3 anchors
+  -> 0.375*71.5896 + 0.625*50 = 58.0961 (58.10 stored).
 
 Run:  python tests/test_scoring_consumer.py
 Requires (DB half only): psycopg[binary] and either $SOLSCOPE_TEST_PGDSN or pgserver.
