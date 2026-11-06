@@ -393,6 +393,69 @@ def logic_checks() -> None:
         consumer_mod.evaluate_gate = real_gate
     check("a not_rankable wallet never reaches the gate", gate_calls == [], f"{gate_calls}")
 
+    print("-- band derivation (sec 5) ----------------------------------------")
+    from solscope.bands import derive_band
+    from solscope.confidence import GateResult
+
+    def gate_result(passed=True, reason="all thresholds met"):
+        return GateResult(wallet="W", composite_confidence=Decimal("70"),
+                          distinct_anchors=5, gate_passed=passed,
+                          gate_reason=reason, components={}, weights={}, thresholds={})
+
+    passed = gate_result()
+    no_anchors = gate_result(False, "distinct_anchors below minimum (2 < 3)")
+    no_evidence = gate_result(False, "confidence below minimum (35.00 < 40.00)")
+
+    matrix = {
+        "good+rich": derive_band(Decimal("80.19"), Decimal("82"),
+                                 Decimal("94.33"), passed, CONFIG),
+        "bad+rich": derive_band(Decimal("29.25"), Decimal("28"),
+                                Decimal("94.33"), passed, CONFIG),
+        "good+thin": derive_band(Decimal("66.66"), Decimal("78"),
+                                 Decimal("59.51"), no_anchors, CONFIG),
+        "bad+thin": derive_band(Decimal("34.53"), Decimal("24"),
+                                Decimal("59.51"), no_anchors, CONFIG),
+    }
+    check("good+rich is track (80.19 >= 75, confidence 94.33 >= 60)",
+          matrix["good+rich"].band == "track", matrix["good+rich"].band)
+    check("bad+rich is exclude, because its raw 28 is below every threshold",
+          matrix["bad+rich"].band == "exclude"
+          and matrix["bad+rich"].band_reason == "raw_below_investigate",
+          matrix["bad+rich"].band_reason)
+    check("good+thin is promising_thin, not exclude",
+          matrix["good+thin"].band == "promising_thin"
+          and matrix["good+thin"].band_reason == "promising_but_unconfirmed",
+          f"{matrix['good+thin'].band}/{matrix['good+thin'].band_reason}")
+    check("bad+thin shares the composite but not the band: raw 24 fails the floor",
+          matrix["bad+thin"].band == "exclude"
+          and "promising_thin floor not met" in matrix["bad+thin"].band_reason,
+          matrix["bad+thin"].band_reason)
+    check("the pair identity holds on band_basis_score",
+          matrix["good+rich"].band_basis_score == Decimal("80.19")
+          and matrix["bad+rich"].band_basis_score == Decimal("29.25"))
+
+    check("watch is reachable: adjusted 65, confidence 70, gate passed",
+          derive_band(Decimal("65"), Decimal("70"), Decimal("70"), passed,
+                      CONFIG).band == "watch")
+    check("investigate is reachable: adjusted 48, confidence 70, gate passed",
+          derive_band(Decimal("48"), Decimal("50"), Decimal("70"), passed,
+                      CONFIG).band == "investigate")
+    check("a promising-looking wallet at confidence 25 is excluded, not surfaced",
+          derive_band(Decimal("40"), Decimal("80"), Decimal("25"), no_anchors,
+                      CONFIG).band == "exclude")
+    check("a gate failure on confidence is never promising_thin",
+          derive_band(Decimal("30"), Decimal("80"), Decimal("35"), no_evidence,
+                      CONFIG).band == "exclude")
+    low_low = derive_band(Decimal("30"), Decimal("20"), Decimal("20"), passed, CONFIG)
+    check("a passed-gate wallet below investigate says why it is excluded",
+          low_low.band == "exclude"
+          and "AND confidence below watch threshold" in low_low.band_reason,
+          low_low.band_reason)
+    check("band thresholds come from config, not the design's 70/40",
+          CONFIG["bands"] == {"track": 75, "watch": 60, "investigate": 45,
+                              "deprioritize": 0},
+          f"{CONFIG['bands']}")
+
     print("-- wallet assembly ------------------------------------------------")
     scored = build_wallet_score(
         FactorConn(computed=3, total=3), "WalletA", wallet_a(), [], CONFIG,
@@ -415,9 +478,10 @@ def logic_checks() -> None:
               scored.confidence_adjusted_score != Decimal("50.00"))
         check("the row records its band basis",
               scored.band_basis == "shrunk_early_entry", scored.band_basis)
-        check("the row is excluded from ranking",
-              (scored.band, scored.recommendation) == ("exclude", "exclude"),
-              f"{scored.band}/{scored.recommendation}")
+        check("the row is excluded on the adjusted score, with the reason kept",
+              (scored.band, scored.recommendation) == ("exclude", "exclude")
+              and "raw_below_investigate" in scored.gated_by,
+              f"{scored.band}/{scored.recommendation}/{scored.gated_by}")
         check("gated_by names the missing dimensions",
               all(dim in scored.gated_by for dim in ("profitability", "integrity")),
               scored.gated_by)
@@ -691,6 +755,14 @@ def db_checks() -> bool:
               close(a_adjusted[0], "25.16"), f"{a_adjusted}")
         check("and the basis is recorded as shrunk_early_entry",
               a_adjusted[1] == "shrunk_early_entry", f"{a_adjusted}")
+        a_band = conn.execute(
+            "SELECT band, recommendation, gated_by FROM scores WHERE address='WalletA'"
+        ).fetchone()
+        check("A is banded exclude on the adjusted score",
+              a_band[0] == "exclude" and a_band[1] == "exclude", f"{a_band}")
+        check("A's gated_by says raw_below_investigate, not a gate failure",
+              "raw_below_investigate" in a_band[2]
+              and "confidence_gate" not in a_band[2], f"{a_band[2]}")
         check("adjusted is shrunk early_entry 59.90 x 42/100, not the placeholder",
               close(a_adjusted[2], "59.9") and close(a_adjusted[0], "25.16"),
               f"{a_adjusted}")
@@ -851,6 +923,49 @@ def db_checks() -> bool:
               f"scored={third.wallets_scored} b_rows={b_rows}")
         check("pruning leaves the other wallets intact",
               count(conn, "scores") == 3, f"{count(conn, 'scores')}")
+
+        print("\n-- solscope scores (read command) ---------------------------------")
+        import argparse as _argparse
+        import contextlib
+        import io
+
+        from psycopg.conninfo import make_conninfo
+
+        from solscope.cli import Ctx, _cmd_scores
+        from solscope.config import load_budget
+
+        dsn_text = make_conninfo(**conn_kwargs)
+        ctx = Ctx(budget=load_budget(), dsn=dsn_text, verbose=False)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = _cmd_scores(ctx, _argparse.Namespace(
+                wallet=None, band=None, limit=50, as_of=None))
+        text = out.getvalue()
+        print(text)
+        check("scores exits 0 against a real database", rc == 0)
+        check("it lists every stored wallet",
+              all(wallet in text for wallet in ("WalletA", "WalletD", "WalletE")),
+              text)
+        check("it shows band, confidence, adjusted and the reason",
+              all(token in text for token in ("exclude", "42.00", "raw_below_investigate")),
+              text)
+        check("it states the band basis",
+              "basis: shrunk_early_entry" in text, text)
+
+        narrow = io.StringIO()
+        with contextlib.redirect_stdout(narrow):
+            rc_narrow = _cmd_scores(ctx, _argparse.Namespace(
+                wallet="WalletA", band=None, limit=50, as_of=None))
+        narrow_text = narrow.getvalue()
+        check("--wallet narrows the report",
+              rc_narrow == 0 and "WalletA" in narrow_text
+              and "WalletD" not in narrow_text, narrow_text)
+        filtered = io.StringIO()
+        with contextlib.redirect_stdout(filtered):
+            _cmd_scores(ctx, _argparse.Namespace(
+                wallet=None, band="track", limit=50, as_of=None))
+        check("--band with no matches says so instead of printing an empty table",
+              "no scores stored" in filtered.getvalue(), filtered.getvalue())
 
     return True
 

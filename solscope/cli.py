@@ -15,6 +15,7 @@ surface is stable and later phases drop into a command that already parses.
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
 import sys
 from dataclasses import dataclass
 from typing import Callable
@@ -22,6 +23,7 @@ from typing import Callable
 from . import __version__
 from .config import BudgetConfig, ConfigError, load_budget, load_scoring
 from .db import MigrationError, connect, migrate
+from .report import BANDS as BAND_NAMES
 
 # Subcommands scheduled in doc 07. Bodies arrive with their phase; the
 # parser accepts them now so scripts and docs can be written against a
@@ -308,6 +310,32 @@ def _cmd_positions(ctx: Ctx, args: argparse.Namespace) -> int:
         conn.close()
 
 
+def _parse_instant(value: str) -> _dt.datetime:
+    """ISO-8601 instant; a naive value is read as UTC, never as local time."""
+    try:
+        parsed = _dt.datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"not an ISO-8601 date/time: {value!r}") from exc
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=_dt.timezone.utc)
+
+
+def _cmd_scores(ctx: Ctx, args: argparse.Namespace) -> int:
+    """Phase 1b — read stored bands, confidence and the reasons behind them."""
+    from .report import fetch_scores, format_scores
+
+    if ctx.dsn is None:
+        print("error: scores needs SOLSCOPE_PGDSN", file=sys.stderr)
+        return 1
+    conn = connect(ctx.dsn)
+    try:
+        rows = fetch_scores(conn, wallet=args.wallet, band=args.band,
+                            limit=args.limit, as_of=args.as_of)
+        print(format_scores(rows))
+    finally:
+        conn.close()
+    return 0
+
+
 def _cmd_stub(name: str) -> Callable[[Ctx, argparse.Namespace], int]:
     def run(ctx: Ctx, args: argparse.Namespace) -> int:
         print(
@@ -374,6 +402,15 @@ def build_parser() -> argparse.ArgumentParser:
     pos.add_argument("--mark-usd", type=float, default=None,
                      help="mark price for open inventory, used with --show")
 
+    scores = sub.add_parser("scores", help="Phase 1b — read stored bands and confidence")
+    scores.add_argument("--wallet", default=None, help="one address only")
+    scores.add_argument("--band", default=None, choices=list(BAND_NAMES),
+                        help="filter to one band")
+    scores.add_argument("--limit", type=int, default=50,
+                        help="how many rows to print, best first (default 50)")
+    scores.add_argument("--as-of", type=_parse_instant, default=None,
+                        help="only rows computed at or before this instant (ISO-8601)")
+
     for name in STUB_COMMANDS:
         sub.add_parser(name, help=STUB_COMMANDS[name])
 
@@ -387,6 +424,7 @@ _HANDLERS: dict[str, Callable[[Ctx, argparse.Namespace], int]] = {
     "ingest": _cmd_ingest,
     "derive": _cmd_derive,
     "positions": _cmd_positions,
+    "scores": _cmd_scores,
     **{name: _cmd_stub(name) for name in STUB_COMMANDS},
 }
 

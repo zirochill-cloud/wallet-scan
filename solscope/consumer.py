@@ -102,6 +102,7 @@ from dataclasses import dataclass, field
 from decimal import ROUND_HALF_EVEN, Decimal
 from typing import Any, Mapping, Sequence
 
+from .bands import derive_band
 from .confidence import (
     GateResult,
     confidence_adjusted_score,
@@ -692,10 +693,16 @@ def build_wallet_score(
     confidence = gate.composite_confidence
     overall = PARTIAL_OVERALL_SCORE
     adjusted = shrink_for_confidence(early.shrunk_value or Decimal(0), confidence)
+    band = derive_band(adjusted, early.raw_value or Decimal(0), confidence, gate, config)
 
+    # D13: a collapsed band must not collapse the reason. The gate reason, the
+    # band's own reason (raw_below_investigate, promising_but_unconfirmed, ...) and
+    # the unbuilt-dimension note are separate clauses on purpose.
     gates: list[str] = []
     if not gate.gate_passed:
         gates.append(f"confidence_gate: {gate.gate_reason}")
+    if band.band_reason:
+        gates.append(band.band_reason)
     gates.append("incomplete_score: missing_dimensions=" + ",".join(UNBUILT_DIMENSIONS))
     return WalletScore(
         wallet=wallet,
@@ -706,8 +713,8 @@ def build_wallet_score(
         overall_score=overall,
         confidence_score=confidence,
         confidence_adjusted_score=adjusted,
-        band="exclude",
-        recommendation="exclude",
+        band=band.band,
+        recommendation=band.band,
         gated_by=";".join(gates),
         gate=gate,
     )
@@ -1076,7 +1083,9 @@ def _confidence_explanation(wallet_score: WalletScore) -> str:
     return (
         f"confidence {gate.composite_confidence} = 100 x sum(weight x factor): "
         f"{factors}; distinct_anchors={gate.distinct_anchors}; "
-        f"gate {'passed' if gate.gate_passed else 'failed'}: {gate.gate_reason}"
+        f"gate {'passed' if gate.gate_passed else 'failed'}: {gate.gate_reason}; "
+        f"band={wallet_score.band} on {wallet_score.band_basis} "
+        f"({wallet_score.confidence_adjusted_score})"
     )
 
 
