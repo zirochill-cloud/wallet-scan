@@ -420,6 +420,12 @@ def evaluate_gate(conn, wallet: str, *, as_of: _dt.datetime,
 def confidence_adjusted_score(overall: Decimal, confidence: Decimal) -> Decimal:
     """``50 + (overall - 50) * confidence/100`` — doc 05 §12's pull to neutral.
 
+    The **full-model** basis: what a row means once all eight dimensions exist.
+    While five of them are unbuilt ``overall`` is the neutral 50.00, and this
+    formula returns 50.00 for every wallet, so consumer rows use
+    ``shrink_for_confidence`` instead (D21) and record the choice in
+    ``scores.band_basis``.
+
     Low confidence neither rewards nor punishes: it declines to make the claim,
     so a 90 at 40 confidence becomes 66 and a 20 at 40 becomes 38.
     """
@@ -427,3 +433,21 @@ def confidence_adjusted_score(overall: Decimal, confidence: Decimal) -> Decimal:
     confidence = Decimal(confidence)
     return (Decimal(50) + (overall - Decimal(50)) * (confidence / Decimal(100))
             ).quantize(_TWO_DP, rounding=ROUND_HALF_EVEN)
+
+
+def shrink_for_confidence(score: Decimal, confidence: Decimal) -> Decimal:
+    """``score * confidence/100`` — the early-entry basis for this phase (D21).
+
+    Multiplication rather than the pull-to-50 form, because there is no honest
+    overall score to pull: applying ``50 + (overall - 50)`` to the placeholder 50
+    yields 50 for every wallet. The early-entry score is measured, so scaling it by
+    the evidence behind it keeps the ranking informative and still refuses to make
+    a claim the evidence cannot support.
+
+    Bands computed from this number are **early-entry** bands. When the other five
+    dimensions exist, ``scores.band_basis`` flips to ``overall_score`` and
+    ``confidence_adjusted_score`` becomes the pull-to-50 form above.
+    """
+    value = (Decimal(score) * Decimal(confidence) / Decimal(100)).quantize(
+        _TWO_DP, rounding=ROUND_HALF_EVEN)
+    return max(ZERO, min(Decimal(100), value))

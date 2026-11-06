@@ -407,9 +407,14 @@ def logic_checks() -> None:
               scored.confidence_score == Decimal("42.00"), f"{scored.confidence_score}")
         check("A clears the confidence floor on coverage and sample alone",
               scored.gate.gate_passed is True, scored.gate.gate_reason)
-        check("adjusted is 50.00: partial overall with a passing gate",
-              scored.confidence_adjusted_score == Decimal("50.00"),
+        # D21: the pull applies to the shrunk early_entry, not to the placeholder 50.
+        check("adjusted is 25.16 = shrunk early_entry 59.90 x 42/100",
+              scored.confidence_adjusted_score == Decimal("25.16"),
               f"{scored.confidence_adjusted_score}")
+        check("and it is not overall_score (the placeholder would give 50.00)",
+              scored.confidence_adjusted_score != Decimal("50.00"))
+        check("the row records its band basis",
+              scored.band_basis == "shrunk_early_entry", scored.band_basis)
         check("the row is excluded from ranking",
               (scored.band, scored.recommendation) == ("exclude", "exclude"),
               f"{scored.band}/{scored.recommendation}")
@@ -678,6 +683,17 @@ def db_checks() -> bool:
         # re-normalised away.
         check("A's stored confidence_score is the composite 42.00, not 0.00",
               close(a[2], "42"), f"{a[2]}")
+        a_adjusted = conn.execute(
+            "SELECT s.confidence_adjusted_score, s.band_basis, e.shrunk_value "
+            "FROM scores s JOIN sub_scores e ON e.score_id = s.id "
+            "AND e.dimension = 'early_entry' WHERE s.id = %s", (a[0],)).fetchone()
+        check("A's adjusted is shrunk_early_entry x confidence/100 (25.16)",
+              close(a_adjusted[0], "25.16"), f"{a_adjusted}")
+        check("and the basis is recorded as shrunk_early_entry",
+              a_adjusted[1] == "shrunk_early_entry", f"{a_adjusted}")
+        check("adjusted is shrunk early_entry 59.90 x 42/100, not the placeholder",
+              close(a_adjusted[2], "59.9") and close(a_adjusted[0], "25.16"),
+              f"{a_adjusted}")
 
         early_a = conn.execute(
             "SELECT raw_value, normalized_value, shrunk_value, weight, sample_size, "

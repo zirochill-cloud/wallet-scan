@@ -107,6 +107,7 @@ from .confidence import (
     confidence_adjusted_score,
     evaluate_gate,
     sell_only_pct,
+    shrink_for_confidence,
 )
 from .config import CONFIG_DIR, ConfigError, load_scoring
 
@@ -300,6 +301,9 @@ class WalletScore:
     recommendation: str
     gated_by: str
     gate: GateResult
+    #: What the confidence pull was applied to; D21 makes this early-entry-specific
+    #: until the other five dimensions exist.
+    band_basis: str = "shrunk_early_entry"
 
 
 @dataclass
@@ -671,6 +675,13 @@ def build_wallet_score(
     the existing dimensions: confidence answers "how much evidence", the score
     answers "how good", and Option 3's attempt to gate on a confidence that did not
     exist yet is retired.
+
+    ``confidence_adjusted_score`` uses the **shrunk early-entry** value, not
+    ``overall_score`` (D21). With five of eight dimensions unbuilt, overall is the
+    neutral 50.00, so `50 + (50 - 50) * confidence` is 50.00 for every wallet — a
+    column of identical values that would read as a ranking. The pull therefore
+    applies to the one dimension this phase measures, and bands derived from it
+    are early-entry bands. ``WalletScore.band_basis`` records which it was.
     """
     early = early_entry_dimension(aggregates, config, anchors)
     if not early.is_computed:
@@ -680,7 +691,7 @@ def build_wallet_score(
 
     confidence = gate.composite_confidence
     overall = PARTIAL_OVERALL_SCORE
-    adjusted = confidence_adjusted_score(overall, confidence)
+    adjusted = shrink_for_confidence(early.shrunk_value or Decimal(0), confidence)
 
     gates: list[str] = []
     if not gate.gate_passed:
@@ -1082,14 +1093,15 @@ def write_wallet_score(
             """
             INSERT INTO scores (
                 score_run_id, address, as_of, overall_score, confidence_score,
-                confidence_adjusted_score, band, recommendation, gated_by
+                confidence_adjusted_score, band_basis, band, recommendation, gated_by
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (score_run_id, address) DO UPDATE SET
                 as_of                     = EXCLUDED.as_of,
                 overall_score             = EXCLUDED.overall_score,
                 confidence_score          = EXCLUDED.confidence_score,
                 confidence_adjusted_score = EXCLUDED.confidence_adjusted_score,
+                band_basis                = EXCLUDED.band_basis,
                 band                      = EXCLUDED.band,
                 recommendation            = EXCLUDED.recommendation,
                 gated_by                  = EXCLUDED.gated_by,
@@ -1103,6 +1115,7 @@ def write_wallet_score(
                 wallet_score.overall_score,
                 wallet_score.confidence_score,
                 wallet_score.confidence_adjusted_score,
+                wallet_score.band_basis,
                 wallet_score.band,
                 wallet_score.recommendation,
                 wallet_score.gated_by,
