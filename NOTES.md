@@ -165,6 +165,28 @@ the transcript still existing, which was luck rather than process.
 (`solscope/aggregation.py`, `schema/003_wallet_aggregates.sql`) is derived from that
 committed text rather than from the transcript.*
 
+**2026-11-06: A fixture was arithmetically right and structurally impossible.** The §6 thin
+row of the confidence design specified coverage 0.50 (2 of 4 anchors) *and* metadata 0.60
+(3 of 5) — but both factors divide by the same set, the anchors the wallet was measured on, so
+no wallet can satisfy both. The hand-check was done on the *factor values* and never on whether
+one wallet could produce them; the composite 60.51 was therefore correct arithmetic about an
+impossible object. Caught when S12b had to seed the row as real anchors rather than pass the
+numbers in.
+
+**Process rule that follows:** a fixture is a set of inputs to one entity, not a list of
+independently plausible values. When two factors share a denominator, the fixture must be
+built bottom-up from rows (how many anchors, how many computed, how many resolved) and the
+factor values derived from it — never chosen per factor and then asserted. Verifying against
+synthetic *rows* rather than synthetic *numbers* is what surfaced this, and is why D18 asks for
+real seeded anchors.
+
+**2026-11-06: My own arithmetic slip, caught by the same discipline.** While wiring the
+composite into the consumer I predicted a five-anchor wallet would score 52.00, having used
+sample 0.60 from the two-anchor case; five anchors against a divisor of five is 1.00, so the
+composite is 60.00. The test failed, the check was corrected, and the assertion stayed — the
+prediction being wrong in the test output is the process working, not a reason to loosen the
+check.
+
 ---
 
 ## § AGGREGATION_EDGE_CASES
@@ -229,9 +251,11 @@ later — the same discipline as `§ DATA_LOSS_2026_10` and `§ PROCESS_FAILURES
 | `shrinkage.k.early_entry` | 5 | At `k=15` with 2–5 anchors the cohort compressed into 45.0–56.6 (11.6-pt spread); five anchors carried only 25% weight. `k=5` gives 40.0–63.2 (23.2-pt spread), a reachable window of 25–75, and half weight at five anchors. | Wallets routinely carry ≥10 anchors (reconsider 8–15). |
 | `shrinkage.k.token_selection` | 5 | Same arithmetic and the same anchor/position scarcity as `early_entry`. | Positions per wallet routinely ≥10. |
 | `shrinkage.prior` | 50 | Encodes ignorance, not suspicion. Lowering it to 25 leaves the good-vs-bad gap identical at n=2 (5.46 pts) while calling an unmeasured good wallet (76.40) bad at 31.05. With the population unknown, the midpoint is the least committal prior Doc 05 §3 already names as neutral. | Real data shows the population median raw is far from 50 — then set the prior to that median, with evidence. |
-| `confidence_gate.existing_min` | 25 | Mirrors `gates.confidence_min`. Below this the existing confidence cannot support a ranking claim. | §12 exists and the five components imply a different floor. |
-| `confidence_gate.sample_min` | 0.30 | `0.30` = at least three distinct computed anchors. The aggregator will compute at two; ranking on two is not defensible. | Power analysis of the retrospective anchor set. |
-| `confidence_gate.coverage_min` | 0.50 | At least half of the wallet's anchors measured. Below that the composite describes a minority of the anchor set. | Power analysis of the retrospective anchor set. |
+| `confidence_gate.confidence_min` | 40 | The §12 composite floor. At 40 the adjusted score keeps 40% of its distance from the old neutral, so the scale still has range; at the old 25 everything converged toward the middle while reading as a ranking. `gates.confidence_min: 25` is deleted (D12) so only one floor exists. | A measured distribution showing wallets bunched at the floor. |
+| `confidence_gate.min_distinct_anchors` | 3 | A validity rule, not a calibration: two anchors compute but cannot be ranked. Deliberately separate from `sample_full_credit_at` (D5) so a calibration edit cannot move the rankability floor. | A power analysis showing two-anchor ranking is defensible after all. |
+| `confidence.sample_full_credit_at` | 5 | Distinct computed anchors at which more anchors stop adding confidence (D5). Reaches full credit at the same five anchors where shrinkage gives an observation half weight. | Anchor counts routinely exceed 10 and the score needs more resolution at the top. |
+| `scores.band_basis` | `shrunk_early_entry` | Bands read the one measured dimension, scaled by confidence (D21); `overall_score` is the neutral 50.00 placeholder, and pulling it returns 50.00 for every wallet. | Five more dimensions built — flip to `overall_score`, at which point the same bands become full-wallet bands. |
+| `bands.track` (configured) | 75 | **Deviation from §5's 70**, left as configured because band thresholds are not this turn's to change. With the early-entry basis, `track` requires both 75 adjusted and confidence ≥60; the design's 70 would admit a slightly wider top band. | The first real anchor run: compare how many wallets sit in 70–75. |
 
 Factor `f = n/(n+k)` at `k=5`, by sample size: n=2 → 0.2857, n=3 → 0.3750, n=5 → 0.5000,
 n=9 → 0.6429, n=15 → 0.7500, n=30 → 0.8571. At `k=15` the same sizes gave 0.1176, 0.1667,

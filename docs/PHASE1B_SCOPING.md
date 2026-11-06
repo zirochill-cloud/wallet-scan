@@ -451,6 +451,23 @@ with an inline note); the finding stays here so the correction is auditable rath
 The alternative — a five-anchor thin core with coverage 0.40 and composite 57.51 — was not
 taken.
 
+**D20 — the §6 thin fixture is corrected, not defended.** Coverage and metadata divide by the
+same set, so a 4-anchor wallet cannot have metadata 0.60; the thin column's metadata becomes
+0.50, its composite 59.51, and its adjusted pair 66.66 / 34.53. The correction is applied to
+§6's thin column only, with an inline footnote, and the finding stays in D18 so a reader can
+see what changed and why. No other row moves: the rich column was always internally consistent
+(20 anchors, 19 computed, 19 metadata — one denominator).
+
+**D21 — bands in this phase are early-entry bands.** `confidence_adjusted_score` is
+`shrunk_early_entry × confidence_score / 100` while five of eight dimensions are unbuilt, not
+`50 + (overall − 50) × confidence/100`: overall is the neutral placeholder 50.00, so the
+pull-to-50 form returns 50.00 for every wallet and turns the column into a non-ranking. Bands
+derived from it therefore answer "is this wallet's early-entry ability worth tracking?", not
+"is this wallet good?", and `scores.band_basis` records which basis produced each row
+(`shrunk_early_entry` today, `overall_score` once the other five dimensions exist). Both
+semantics are legitimate; only one is available at each phase, and a row that does not say
+which one it is invites a future reader to compare two different things.
+
 **Penalise thinness at one semantic level, not two.** With a gate that can exclude a thin
 wallet, shrinkage should not also drag it to the middle — otherwise a wallet is punished
 once for having few anchors and again for being shrunk toward the prior. `k = 5` keeps a

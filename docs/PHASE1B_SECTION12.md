@@ -184,7 +184,15 @@ failure rather than an inadmissibility failure, so a wallet that fails only it, 
 
 ## §5 Band derivation
 
-Bands are assigned to `confidence_adjusted_score = 50 + (score − 50) × confidence/100`.
+Bands are assigned to `confidence_adjusted_score`. **Which score the pull applies to is a
+phase property (D21).** While five of eight dimensions are unbuilt, the score is
+`shrunk_early_entry × confidence/100` and the bands are *early-entry* bands — "is this
+wallet's early-entry ability worth tracking?" — with `scores.band_basis = 'shrunk_early_entry'`.
+Once the other dimensions exist, the basis becomes `overall_score` and the pull is
+`50 + (overall − 50) × confidence/100`, making the same five rules full-wallet bands. The
+pull-to-50 form is not usable yet: overall is the neutral 50.00, so it returns 50.00 for every
+wallet. The band *rules* below are the same in both phases; only the number they read changes,
+and every row says which one it read.
 
 Rule (five bands, D15):
 
@@ -231,11 +239,12 @@ doc 05 §13 documents the same four (`≥75` track, `60–74` watch, `45–59` i
    confidence is indistinguishable from a 78-adjusted wallet at 90, and the first is a
    shrinkage artifact — a raw 88 with three anchors stores 78 once, and 88's evidence is what
    the band is supposed to be about.
-2. **The investigate floor drops from 45 to 40** and gains an override: `raw ≥ 70 AND
-   confidence ≥ 30`. The pull-to-50 mechanic is symmetric, so a genuinely strong wallet with
-   middling data gets compressed toward 50 and can fall below a flat floor. The override
-   surfaces it as `investigate` — never as `track` — so strong-but-thin evidence is visible
-   without being ranked alongside strong-and-rich.
+2. **The investigate floor would drop from 45 to 40** — **not applied in S12c**, because band
+   thresholds were out of scope for that turn. The implemented rule reads the configured
+   75/60/45, so the deviation is recorded here and remains a decision rather than a silent
+   change; `track`'s confidence conjunct (≥60) is implemented, with no config key of its own.
+   The old raw-override escape hatch is gone either way: the genuinely unreachable case was
+   the anchor-constrained one, and that is `promising_thin`'s job.
 3. **`watch` survives; `deprioritize` does not.** `watch` is currently configured
    (`bands.watch: 60`), and D15 keeps it at that threshold, so the band is not new — what
    changes is its meaning: from the flat 60–74 window to "60 and up that `track` did not
@@ -400,15 +409,25 @@ pair and 59.51 / 59.51 for the thin pair (see § Q4 D18/D20 — the thin row's m
 unreachable and is corrected to 0.50), with the thin wallets still failing the anchor
 conjunct. Bands remain `exclude` until S12c, so no wallet is ranked on this turn's numbers.
 
-**S12c — band derivation and `solscope scores` read command.** *The last implementation step.*
-Applies §5's five bands to the stored `confidence_adjusted_score` and composite — including
-`promising_thin` and the `gated_by` reasons of D13 — and adds the read-only `solscope scores`
-command so gate outcomes and bands are inspectable from the shell, the capability whose
-absence was noted at the end of the Option 3 turn. No scoring logic changes in S12c; if a band
-value looks wrong there, it is a §5 decision to revisit, not a patch to apply.
+**S12c — band derivation and `solscope scores` read command.** *Done (2026-11-06).*
+`solscope/bands.py` implements the five rules with the thresholds read from `scoring.yaml`
+(currently 75 / 60 / 45, so `track`'s 75 is the configured value rather than §5's 70);
+`schema/006` admits `promising_thin` to the band CHECK and the recommendation enum and
+comments `deprioritize` as a legacy value; `solscope/report.py` plus the `solscope scores`
+command print band, adjusted, raw, confidence, gate outcome and `gated_by` from the latest run,
+with `--wallet`, `--band`, `--limit` and `--as-of`. Exclusion reasons survive the band change:
+`raw_below_investigate` (measured and not good enough), the fuller "raw score below investigate
+threshold AND confidence below watch threshold", the anchor-conjunct text, and
+`promising_but_unconfirmed` for `promising_thin`.
 
-Ordering is load-bearing: a band rule applied to an all-zero confidence column (S12c before
-S12b) would look correct in tests and be meaningless in production.
+**§12 is now implemented end to end**: five factors, composite, gate, adjusted score with a
+recorded basis, five bands, and a read path. The last remaining functional blocker is **real
+anchors** — the pipeline can score, gate and band, but the anchor set is empty, so a live run
+ranks nobody.
+
+Ordering was load-bearing: a band rule applied to an all-zero confidence column (S12c before
+S12b) would have looked correct in tests and been meaningless in production. S12c came after
+the composite existed, so every band test compares against a real number.
 
 ---
 
