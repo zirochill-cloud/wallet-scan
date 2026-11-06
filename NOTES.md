@@ -177,6 +177,59 @@ names all four fields, and no warning for a clean set).
 
 Revisit condition: real anchor data with more than incidental negative values.
 
+**2026-11-06. Shrinkage can invert two wallets below the prior — intentionally.**
+
+`shrunk = f·raw + (1−f)·50` with `f = n/(n+k)`. Below the prior, a thinner wallet is
+pulled **less** far from 50, so a worse raw score with fewer anchors can outrank a better
+one:
+
+    raw 46, n=5  ->  0.50·46 + 0.50·50 = 48.00
+    raw 44, n=2  ->  0.286·44 + 0.714·50 = 48.29     (k=5)
+
+At the old `k=15` the same pair inverted too, just less visibly (49.00 vs 49.29). This is a
+property of shrinkage, not a bug: with two anchors the system does not know the wallet is
+bad, and "unknown" must not be recorded as "worse than a measured 46".
+
+**Do not "fix" this** by pinning the factor, by sorting on `raw_value`, or by lowering the
+prior. Pinning or sorting makes the stored value disagree with the ranking; lowering the
+prior punishes good thin wallets (a 76.40 wallet with two anchors would store 31.05 — see
+`§ SCORING_PARAMETERS`). If ranking stability matters more than honesty about thin
+evidence, the correct fix is the confidence gate, which excludes a thin wallet from ranking
+instead of pretending it was measured.
+
+---
+
+## § SCORING_PARAMETERS
+
+Every number that changes a stored score, with why it holds its current value and what
+would make us revisit it. Decisions are recorded when they are made, not reconstructed
+later — the same discipline as `§ DATA_LOSS_2026_10` and `§ PROCESS_FAILURES`.
+
+| Parameter | Value | Rationale | Revisit when |
+|---|---|---|---|
+| Sample denominator | `COUNT(DISTINCT anchor_id)`, `status='computed'` | An anchor measured on three metrics is one observation. Summing per-metric counts tripled the sample and inflated `f` by 3x (9 instead of 3). | Never — this was a correctness bug, not a tuning choice. |
+| `shrinkage.k.early_entry` | 5 | At `k=15` with 2–5 anchors the cohort compressed into 45.0–56.6 (11.6-pt spread); five anchors carried only 25% weight. `k=5` gives 40.0–63.2 (23.2-pt spread), a reachable window of 25–75, and half weight at five anchors. | Wallets routinely carry ≥10 anchors (reconsider 8–15). |
+| `shrinkage.k.token_selection` | 5 | Same arithmetic and the same anchor/position scarcity as `early_entry`. | Positions per wallet routinely ≥10. |
+| `shrinkage.prior` | 50 | Encodes ignorance, not suspicion. Lowering it to 25 leaves the good-vs-bad gap identical at n=2 (5.46 pts) while calling an unmeasured good wallet (76.40) bad at 31.05. With the population unknown, the midpoint is the least committal prior Doc 05 §3 already names as neutral. | Real data shows the population median raw is far from 50 — then set the prior to that median, with evidence. |
+| `confidence_gate.existing_min` | 25 | Mirrors `gates.confidence_min`. Below this the existing confidence cannot support a ranking claim. | §12 exists and the five components imply a different floor. |
+| `confidence_gate.sample_min` | 0.30 | `0.30` = at least three distinct computed anchors. The aggregator will compute at two; ranking on two is not defensible. | Power analysis of the retrospective anchor set. |
+| `confidence_gate.coverage_min` | 0.50 | At least half of the wallet's anchors measured. Below that the composite describes a minority of the anchor set. | Power analysis of the retrospective anchor set. |
+
+Factor `f = n/(n+k)` at `k=5`, by sample size: n=2 → 0.2857, n=3 → 0.3750, n=5 → 0.5000,
+n=9 → 0.6429, n=15 → 0.7500, n=30 → 0.8571. At `k=15` the same sizes gave 0.1176, 0.1667,
+0.2500, 0.3750, 0.5000, 0.6667 — the reason a three-anchor wallet stored 54.40 instead of
+59.90.
+
+**Unit mappings are not parameters but are equally load-bearing**, and changing one is a
+scoring change: `r/(1+r)` for `max_subsequent_return` (unbounded → [0,1)), `1 − pct` for
+`buyer_rank_at_entry`, the fraction itself for `pct_entries_before_volume_spike`, and
+`min(1, anchors/10)` for `anchor_sample_size`. `experiment_label =
+aggregate_rule:<rule_version>` in every run key is likewise fixed, because it is what makes
+a re-run idempotent rather than a new run.
+
+Today the gate's first conjunct fails for every wallet (`existing_confidence = 0.00` until
+§12), so no wallet ranks. See `docs/PHASE1B_SCOPING.md § Q4` for the full decisions.
+
 ---
 
 ## § ANTI_PATTERNS

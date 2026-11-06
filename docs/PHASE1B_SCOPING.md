@@ -301,15 +301,15 @@ with no computable `early_entry` gets **no row at all**. The real output is the
 sub-scores: `early_entry`, `token_selection`, and a `confidence` row that carries the
 two factors in its explanation.
 
-**Confidence: computed, stored, not blended.** `anchor_sample_size =
-min(1, computed_anchors / 10)` and `anchor_coverage = computed / (computed + excluded)`
-are computed per wallet and stored — as `score_evidence` rows (`subject_id` =
-`anchor_sample_size` / `anchor_coverage`) and in the `confidence` sub-score's
-explanation. They are **not** blended into `confidence_score`: the blend formula is open,
-and the sub-score's `confidence` column is left NULL rather than filled with an invented
-number. *anchor_sample_size and anchor_coverage are computed but not yet blended into
-confidence. The blend formula is open. The consumer stores them as evidence so a future
-turn can blend without re-computing.*
+**Confidence: gated, not blended.** `anchor_sample_size = min(1, distinct_computed_anchors
+/ 10)` and `anchor_coverage = distinct_computed_anchors / distinct_anchors` are computed per
+wallet and stored — as `score_evidence` rows (`subject_id` = `anchor_sample_size` /
+`anchor_coverage`) and in the `confidence` sub-score's explanation. They are **not** blended
+into `confidence_score`; since 2026-11-06 they **gate** it instead (D4, below), and the
+sub-score's `confidence` column stays NULL rather than carrying an invented number.
+*anchor_sample_size and anchor_coverage are computed but not yet blended into confidence.
+The blend formula is open. The consumer stores them as evidence so a future turn can blend
+without re-computing.*
 
 **Run identity and idempotency.** A run is found by
 `(config_version, as_of, window_start, window_end, experiment_label)` with
@@ -317,6 +317,67 @@ turn can blend without re-computing.*
 NULLs are distinct in a UNIQUE constraint and a NULL label would make every re-run a new
 run. Scores and sub-scores upsert, evidence is replaced, and rows for wallets that no
 longer qualify are pruned, so a re-run converges instead of accumulating.
+
+### Parameter decisions — 2026-11-06
+
+The parameters that change a stored score are written down here when they are decided, not
+reconstructed afterwards. `NOTES.md § SCORING_PARAMETERS` carries the same set with its
+revisit conditions.
+
+**D1 — the shrinkage denominator is anchors, not metric rows.** `anchor_sample_size`
+originally summed `anchor_count_computed` across the three metrics, so three anchors
+measured on three metrics counted as nine independent observations. It is now
+`COUNT(DISTINCT anchor_id) FROM anchor_wallet_metrics WHERE wallet = ? AND status =
+'computed'`, with coverage over the same denominator (distinct computed / distinct total). A
+3-anchor wallet stores `sample_size = 3`. This is a correctness fix, not a tuning choice.
+
+**D2 — shrinkage `k = 5` for both built dimensions.** With `k = 15` and the expected 2–5
+anchors per wallet, `f = n/(n+k)` discarded 75–88% of the signal: the ten-wallet
+distribution (raw 30–76.4) stored 45.0–56.6, an 11.6-point spread with sd 2.93, and the
+reachable window at n ≤ 5 was 37.5–62.5 — three-quarters of the scale unreachable. At
+`k = 5` the same cohort stores 40.0–63.2 (23.2-point spread, sd 5.98), the reachable window
+is 25–75, and five anchors still carry half weight. `k = 5` is calibrated for anchor-scale
+`n`; if wallets routinely carry ≥10 anchors, 8–15 becomes reasonable again.
+
+**D3 — the prior stays 50.** Shrinkage encodes **ignorance, not suspicion**. Lowering the
+prior to 25 does not improve separation at all — at n=2 the good-vs-bad gap is 5.46 points
+either way (76.40 → 31.05 vs 30 → 25.59) — it only moves both wallets down ~22 points and
+stores a genuinely good 76.40 wallet with two anchors at 31.05, i.e. calls it bad. The
+prior is a statement about the population's typical value; with the population unknown the
+midpoint is the least committal answer, and doc 05 §3 already calls it the neutral prior.
+Doubt about thin evidence belongs in the confidence machinery, which now has a gate;
+encoding it a second time in the prior would penalise the same thinness at two semantic
+levels — the same double-count §9's ownership rule forbids for metrics.
+
+**D4 — Option 3: gate on the factors, do not blend them.** `confidence =
+existing_confidence` (unmodified); a wallet ranks only if `existing_confidence >=
+existing_min` **and** `anchor_sample_size >= sample_min` **and** `anchor_coverage >=
+coverage_min`. Thresholds live in `scoring.yaml` under `confidence_gate`
+(`existing_min: 25`, `sample_min: 0.30`, `coverage_min: 0.50`) and are read, never
+hardcoded. `blend_confidence` returns a `BlendResult` carrying the confidence, the verdict,
+every input and threshold, and a note naming the **first failing conjunct**, which
+`gated_by` reproduces verbatim. `sample_min: 0.30` means at least three distinct computed
+anchors: the aggregator will compute at two, ranking on two is not defensible.
+
+Option 3's `existing_confidence` conjunct is unsatisfiable until §12 is implemented. Until
+then, **no wallet ranks.** This is intentional — the pipeline computes scores and stores
+evidence; the gate excludes everything because the confidence it needs does not yet exist.
+A wallet with no computable `early_entry` never reaches the gate at all, because it gets no
+`scores` row.
+
+**Penalise thinness at one semantic level, not two.** With a gate that can exclude a thin
+wallet, shrinkage should not also drag it to the middle — otherwise a wallet is punished
+once for having few anchors and again for being shrunk toward the prior. `k = 5` keeps a
+usable spread and leaves exclusion to the gate; `k = 15` plus a gate would be the same
+penalty counted twice.
+
+**A property, not a bug: shrinkage can invert wallets below the prior.** Because each
+wallet is pulled toward 50 by its own factor, a thinner wallet is pulled less far, so a
+worse raw score with fewer anchors can outrank a better one: at `k = 5`, raw 46 with five
+anchors stores 48.00 while raw 44 with two anchors stores 48.29. With two anchors the
+system does not know the wallet is bad, and "unknown" must not be recorded as "worse than a
+measured 46". Do not sort on `raw_value` to hide it, and do not lower the prior to fix it
+(D3). See `NOTES.md § AGGREGATION_EDGE_CASES`.
 
 ---
 
