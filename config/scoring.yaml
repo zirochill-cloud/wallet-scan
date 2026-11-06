@@ -49,11 +49,11 @@ bands:
 shrinkage:
   prior: 50                    # neutral prior for 0-100 normalised inputs
   k:
-    early_entry: 15            # needs ~15 qualifying entries to reach half-weight
+    early_entry: 5             # needs ~5 anchors to reach half-weight (distinct anchors, not metric rows)
     profitability: 12
     repeatability: 8
     risk: 6
-    token_selection: 15
+    token_selection: 5         # ~5 benchmarked positions to reach half-weight
     exit_effectiveness: 12
     integrity: 0               # penalties are rate-based; no shrinkage
 

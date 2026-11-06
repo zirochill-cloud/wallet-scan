@@ -166,10 +166,17 @@ def logic_checks() -> None:
            "re-normalising only zero weights is an error")
 
     print("-- shrinkage ------------------------------------------------------")
-    shrunk, factor = shrink(Decimal("76.4"), 3, k=Decimal(15), prior=Decimal(50))
-    check("n=3, k=15 -> factor 0.1667", close(factor, "0.1666666", "1e-6"), f"factor={factor}")
-    check("shrunk = 0.1667*76.4 + 0.8333*50 = 54.40", close(shrunk, "54.4"), f"{shrunk}")
-    shrunk, factor = shrink(Decimal("76.4"), 0, k=Decimal(15), prior=Decimal(50))
+    k_early = Decimal(str(CONFIG["shrinkage"]["k"]["early_entry"]))
+    check("config sets early_entry k = 5 (half weight at 5 anchors)", k_early == Decimal(5),
+          f"k={k_early}")
+    shrunk, factor = shrink(Decimal("76.4"), 3, k=k_early, prior=Decimal(50))
+    check("factor at n=3 with the configured k is 3/(3+5) = 0.375",
+          close(factor, "0.375", "1e-9"), f"factor={factor}")
+    check("shrunk = 0.375*76.4 + 0.625*50 = 59.90", close(shrunk, "59.9"), f"{shrunk}")
+    _, heavy = shrink(Decimal("76.4"), 3, k=Decimal(15), prior=Decimal(50))
+    check("the function still honours a larger k (n=3, k=15 -> 0.1667)",
+          close(heavy, "0.1666666", "1e-6"), f"factor={heavy}")
+    shrunk, factor = shrink(Decimal("76.4"), 0, k=k_early, prior=Decimal(50))
     check("zero sample shrinks fully to the prior",
           close(shrunk, "50") and factor == 0, f"{shrunk}/{factor}")
 
@@ -181,11 +188,11 @@ def logic_checks() -> None:
           f"{early_a.weights_used}")
     check("sample size counts anchors, not metric rows: 3 metrics on 3 anchors -> 3 (not 9)",
           early_a.sample_size == 3, f"{early_a.sample_size}")
-    check("shrunk value is 54.40 (n=3 -> factor 3/18 = 0.1667)",
-          close(early_a.shrunk_value, "54.4"), f"{early_a.shrunk_value}")
+    check("shrunk value is 59.90 (n=3 -> factor 3/8 = 0.375)",
+          close(early_a.shrunk_value, "59.9"), f"{early_a.shrunk_value}")
     check("explanation names the components and the shrinkage",
           "max_subsequent_return 4.0000 -> 80.00" in early_a.explanation
-          and "shrinkage 0.1667" in early_a.explanation
+          and "shrinkage 0.3750" in early_a.explanation
           and "n=3" in early_a.explanation,
           early_a.explanation)
     check("confidence factors for A are 0.3 and 1.0 (3 anchors, not 9 metric rows)",
@@ -201,8 +208,8 @@ def logic_checks() -> None:
           f"{early_b.weights_used}")
     check("the dropped metric is named in the explanation",
           "buyer_rank_at_entry=not_rankable" in early_b.explanation, early_b.explanation)
-    check("shrunk value is 52.85714 (n=3 -> factor 0.1667)",
-          close(early_b.shrunk_value, "52.85714", "1e-5"), f"{early_b.shrunk_value}")
+    check("shrunk value is 56.42857 (n=3 -> factor 0.375)",
+          close(early_b.shrunk_value, "56.4285714", "1e-5"), f"{early_b.shrunk_value}")
     check("A and B stay distinguishable after re-normalisation",
           early_a.shrunk_value > early_b.shrunk_value,
           f"{early_a.shrunk_value} vs {early_b.shrunk_value}")
@@ -255,8 +262,8 @@ def logic_checks() -> None:
     token = token_selection_dimension(excesses, CONFIG)
     check("three positions, mean excess 2ln2/3 -> 71.5896",
           close(token.raw_value, "71.5896", "1e-4"), f"{token.raw_value}")
-    check("token_selection shrunk with k=15 over 3 positions -> 53.60",
-          close(token.shrunk_value, "53.5983", "1e-4"), f"{token.shrunk_value}")
+    check("token_selection shrunk with k=5 over 3 positions -> 58.10",
+          close(token.shrunk_value, "58.0961", "1e-4"), f"{token.shrunk_value}")
     check("hit_rate stays a diagnostic: only cohort_excess carries weight",
           list(token.weights_used) == ["cohort_excess"]
           and token.weights_used["cohort_excess"] == Decimal(1),
@@ -505,12 +512,12 @@ def db_checks() -> bool:
             "shrinkage_applied, confidence FROM sub_scores WHERE score_id=%s AND dimension='early_entry'",
             (a[0],),
         ).fetchone()
-        check("A's early_entry raw is 76.40, shrunk 54.40",
-              close(early_a[0], "76.4") and close(early_a[2], "54.4"), f"{early_a}")
+        check("A's early_entry raw is 76.40, shrunk 59.90",
+              close(early_a[0], "76.4") and close(early_a[2], "59.9"), f"{early_a}")
         check("A's early_entry weight is the dimension weight 0.25",
               close(early_a[3], "0.25"), f"{early_a[3]}")
         check("a 3-anchor wallet measured on 3 metrics stores sample_size 3, not 9",
-              early_a[4] == 3 and close(early_a[5], "0.1667", "1e-4"), f"{early_a}")
+              early_a[4] == 3 and close(early_a[5], "0.375", "1e-4"), f"{early_a}")
         check("A's early_entry confidence column is left NULL (blend open)",
               early_a[6] is None, f"{early_a[6]}")
 
@@ -520,8 +527,8 @@ def db_checks() -> bool:
             "AND dimension='early_entry'"
         ).fetchone()
         # raw_value is NUMERIC(38,10); shrunk_value is NUMERIC(6,2) and rounds.
-        check("B's re-normalised early_entry is 67.1428571420 / 52.86",
-              close(early_b[0], "67.1428571420", "1e-9") and close(early_b[1], "52.86"),
+        check("B's re-normalised early_entry is 67.1428571420 / 56.43",
+              close(early_b[0], "67.1428571420", "1e-9") and close(early_b[1], "56.43"),
               f"{early_b}")
 
         token_d = conn.execute(
@@ -529,8 +536,8 @@ def db_checks() -> bool:
             "WHERE score_id=(SELECT id FROM scores WHERE address='WalletD') "
             "AND dimension='token_selection'"
         ).fetchone()
-        check("D's token_selection is 71.5896 / 53.60 over 3 of 4 positions",
-              close(token_d[0], "71.5896", "1e-4") and close(token_d[1], "53.60")
+        check("D's token_selection is 71.5896 / 58.10 over 3 of 4 positions",
+              close(token_d[0], "71.5896", "1e-4") and close(token_d[1], "58.10")
               and token_d[2] == 3,
               f"{token_d}")
         check("D's token_selection explanation reports the exclusion",
@@ -546,7 +553,7 @@ def db_checks() -> bool:
         check("B's stored component weights re-normalise to exactly 1.0",
               len(b_weights) == 2 and sum(b_weights) == Decimal(1), f"{b_weights}")
 
-        check("the thin launch-week benchmark was ignored (median 5.0 would give 51.6)",
+        check("the thin launch-week benchmark was ignored (median 5.0 would give a different value)",
               close(token_d[0], "71.5896", "1e-4"), f"{token_d[0]}")
 
         token_a = conn.execute(
