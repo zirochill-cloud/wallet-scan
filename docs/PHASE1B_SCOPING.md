@@ -444,10 +444,12 @@ anchors remain required for S12c and production; this is a specification check.
 0.60 alongside coverage 0.50. Both factors divide by the same set (the anchors the wallet was
 measured on), so with four anchors the metadata factor can only be a quarter — 0.50 is the
 nearest reachable value, and the thin composite is **59.51**, not 60.51. Keeping 0.60 requires
-five measured anchors, which forces coverage to 0.40 and gives 57.51. S12b therefore verifies
-94.33 / 94.33 for the rich pair exactly and 59.51 / 59.51 for the thin pair, and the §6 numbers
-need one edit — metadata 0.60 → 0.50, or five measured anchors with coverage 0.40 — chosen by
-the spec owner, not by the test. §6 itself is unchanged.
+five measured anchors, which forces coverage to 0.40 and gives 57.51. S12b therefore verified
+94.33 / 94.33 for the rich pair exactly and 59.51 / 59.51 for the thin pair. **D20 applied the
+correction to §6's thin column only** (metadata 0.50, composite 59.51, adjusted 66.66 / 34.53,
+with an inline note); the finding stays here so the correction is auditable rather than silent.
+The alternative — a five-anchor thin core with coverage 0.40 and composite 57.51 — was not
+taken.
 
 **Penalise thinness at one semantic level, not two.** With a gate that can exclude a thin
 wallet, shrinkage should not also drag it to the middle — otherwise a wallet is punished

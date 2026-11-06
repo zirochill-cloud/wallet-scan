@@ -170,7 +170,7 @@ Why a **separate** anchor floor rather than deriving it from `sample_full_credit
 answer different questions. The divisor answers "how many anchors is plenty" (a calibration
 of the factor); the gate answers "how few anchors is too few to rank at all" (a validity
 rule). Deriving one from the other means a future calibration change silently moves the
-validity floor. The thin fixture makes the point concrete: it scores **60.51**, comfortably
+validity floor. The thin fixture makes the point concrete: it scores **59.51**, comfortably
 above 40, so confidence alone would rank a 2-anchor wallet; only the anchor conjunct stops
 it.
 
@@ -198,7 +198,7 @@ Rule (five bands, D15):
 
 `promising_thin` exists for one case that no other band can reach. A wallet in two anchors
 is excluded by the rankability rule (§4) before any band can speak, so the good+thin fixture —
-raw 78, adjusted 66.94, two anchors — vanished from the output entirely. That is the tool
+raw 78, adjusted 66.66, two anchors — vanished from the output entirely. That is the tool
 hiding a wallet the human should look at: the mechanism now says "we can see this is
 promising; we cannot confirm it; look at it yourself." `investigate` cannot do that job,
 because reaching it requires a passed gate. The band is deliberately **not** `track` and
@@ -269,11 +269,11 @@ class, so the only difference between the good and bad member of a pair is the r
 | price provenance (0.25) | 0.90 | 0.90 | 0.75 | 0.75 |
 | sample (0.20) | 1.00 | 1.00 | 0.40 | 0.40 |
 | recency (0.15) | 0.9223 | 0.9223 | 0.8507 | 0.8507 |
-| metadata (0.10) | 0.95 | 0.95 | 0.60 | 0.60 |
-| **confidence_score** | **94.33** | **94.33** | **60.51** | **60.51** |
+| metadata (0.10) | 0.95 | 0.95 | 0.50 | 0.50 |
+| **confidence_score** | **94.33** | **94.33** | **59.51** | **59.51** |
 | distinct computed anchors | 19 | 19 | 2 | 2 |
 | raw score | 82.00 | 28.00 | 78.00 | 24.00 |
-| `confidence_adjusted_score` | 80.19 | 29.25 | 66.94 | 34.27 |
+| `confidence_adjusted_score` | 80.19 | 29.25 | 66.66 | 34.53 |
 | gate | pass | pass | **fail** (2 < 3) | **fail** (2 < 3) |
 | band | `track` | `exclude` | `promising_thin` | `exclude` |
 
@@ -281,13 +281,19 @@ Arithmetic, written out so a reviewer can check it without running code:
 
 - rich: `0.30·0.95 + 0.25·0.90 + 0.20·1.00 + 0.15·0.9223 + 0.10·0.95`
   = `0.2850 + 0.2250 + 0.2000 + 0.1383 + 0.0950` = `0.9433` → **94.33**
-- thin: `0.30·0.50 + 0.25·0.75 + 0.20·0.40 + 0.15·0.8507 + 0.10·0.60`
-  = `0.1500 + 0.1875 + 0.0800 + 0.1276 + 0.0600` = `0.6051` → **60.51**
+- thin: `0.30·0.50 + 0.25·0.75 + 0.20·0.40 + 0.15·0.8507 + 0.10·0.50`
+  = `0.1500 + 0.1875 + 0.0800 + 0.1276 + 0.0500` = `0.5951` → **59.51**
 - good+rich: `50 + 32·0.9433 = 80.19`; bad+rich: `50 − 22·0.9433 = 29.25`
-- good+thin: `50 + 28·0.6051 = 66.94`; bad+thin: `50 − 26·0.6051 = 34.27`
+- good+thin: `50 + 28·0.5951 = 66.66`; bad+thin: `50 − 26·0.5951 = 34.53`
+
+> **Fixture correction (D20), thin column only.** Coverage and metadata divide by the same
+> denominator — the anchors the wallet was measured on — so with 2 measured anchors metadata
+> is limited to 0/2, 1/2 or 2/2. The originally specified 0.60 was incompatible with coverage
+> 0.50; it is corrected here to 0.50, the largest compatible value below the original. No
+> other row changes.
 
 **good+rich and bad+rich have identical confidence: 94.33.** **good+thin and bad+thin have
-identical confidence: 60.51.** No factor causes a difference, because no factor has access to
+identical confidence: 59.51.** No factor causes a difference, because no factor has access to
 a difference — that is the structural argument of §1, and these two identities are the check
 that it survived implementation.
 
@@ -298,11 +304,11 @@ noting in the matrix:
 - `bad+rich` sits at 29.25, and the band rule would call it `exclude` on the score alone. Rich
   data does not rescue a bad wallet — confidence is not a benefit that good wallets earn.
 - `good+thin` is the row that forced `promising_thin`. It has the *highest* adjusted score
-  among the non-track wallets (66.94), raw 78 and confidence 60.51, and two anchors — so it
+  among the non-track wallets (66.66), raw 78 and confidence 59.51, and two anchors — so it
   is unrankable, and under the three-band rule it disappeared. It now appears in `scores`
   with `band='promising_thin'` and `gated_by='distinct_anchors below minimum'`: visible,
   unranked, and explained.
-- `bad+thin` shares that confidence (60.51) and is `exclude`, because its raw 24 fails the
+- `bad+thin` shares that confidence (59.51) and is `exclude`, because its raw 24 fails the
   `raw >= 70` conjunct. The two thin wallets therefore separate on band while sharing
   confidence exactly — orthogonality holding in the branch that was just added.
 
@@ -390,9 +396,9 @@ the audit by building SQL inline.
 `existing_min/sample_min/coverage_min`, `gates.confidence_min` (D12) and
 `sample_full_credit_n_eff` (D11). `sample_full_credit_at: 5` and `min_distinct_anchors: 3` are
 config keys. Verified against the §6 matrix seeded as real rows: 94.33 / 94.33 for the rich
-pair and 59.51 / 59.51 for the thin pair (see § Q4 D18 — the thin row's metadata 0.60 is
-unreachable), with the thin wallets still failing the anchor conjunct. Bands remain
-`exclude` until S12c, so no wallet is ranked on this turn's numbers.
+pair and 59.51 / 59.51 for the thin pair (see § Q4 D18/D20 — the thin row's metadata 0.60 was
+unreachable and is corrected to 0.50), with the thin wallets still failing the anchor
+conjunct. Bands remain `exclude` until S12c, so no wallet is ranked on this turn's numbers.
 
 **S12c — band derivation and `solscope scores` read command.** *The last implementation step.*
 Applies §5's five bands to the stored `confidence_adjusted_score` and composite — including
