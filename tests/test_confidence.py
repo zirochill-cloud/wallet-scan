@@ -22,13 +22,16 @@ from __future__ import annotations
 import datetime as _dt
 import os
 import pathlib
+import re
 import sys
 from decimal import Decimal
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from solscope.confidence import (  # noqa: E402
-    coverage_factor, metadata_factor, provenance_factor, recency_factor,
+    QUERIES, coverage_factor, metadata_factor, provenance_factor, recency_factor,
     sample_factor,
 )
 
@@ -310,8 +313,136 @@ def db_checks(dsn: str) -> None:
               (Decimal(int(agg[0])) / Decimal(int(agg[1]))).quantize(
                   Decimal("0.0001")),
               f"{agg[0]}/{agg[1]}")
+
+        blindness_checks(conn)
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# performance blindness (S12a-3)
+# ---------------------------------------------------------------------------
+
+#: Name fragments that mark a performance column. A confidence factor that reads
+#: any of them is no longer orthogonal to wallet quality, whatever its docstring
+#: says.
+BANNED = ("pnl", "roi", "return", "value", "score", "adjusted")
+
+#: The four tables the factors are allowed to read.
+READABLE_TABLES = ("positions", "anchor_wallet_metrics", "swaps", "tokens")
+
+#: Derived/performance tables no factor may touch at all.
+FORBIDDEN_TABLES = ("scores", "sub_scores", "wallet_aggregates", "wallet_metrics")
+
+
+def schema_columns() -> dict[str, set[str]]:
+    """Column names per table, parsed from the schema files themselves."""
+    text = "".join(
+        (ROOT / "schema" / name).read_text(encoding="utf-8")
+        for name in ("001_init.sql", "002_anchor_registry.sql"))
+    tables: dict[str, set[str]] = {}
+    for block in re.finditer(r"CREATE TABLE (\w+) \((.*?)\n\);", text, re.S):
+        table, body = block.group(1), block.group(2)
+        columns = set()
+        for line in body.splitlines():
+            line = line.strip()
+            # Column lines start with the name and a type (TEXT, NUMERIC(38,0), ...).
+            match = re.match(r"^([a-z_][a-z0-9_]*)\s+[A-Z]", line)
+            if match:
+                columns.add(match.group(1))
+        tables[table] = columns
+    return tables
+
+
+def _identifiers(sql: str) -> set[str]:
+    """Names in a statement, with string literals removed (they are values)."""
+    return set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*",
+                          re.sub(r"'[^']*'", " ", sql)))
+
+
+def _banned_hits(sql: str) -> set[str]:
+    return {name for name in _identifiers(sql)
+            if any(bad in name.lower() for bad in BANNED)}
+
+
+class RecordingConn:
+    """Delegates to the real connection while remembering every statement run."""
+
+    def __init__(self, conn):
+        self._conn = conn
+        self.statements: list[str] = []
+
+    def execute(self, sql, params=()):
+        self.statements.append(sql)
+        return self._conn.execute(sql, params)
+
+
+def blindness_checks(conn) -> None:
+    """The five factors must be unable to read a performance number.
+
+    Three independent checks, because each one alone can be fooled: the declared
+    queries, the statements actually executed, and the schema those statements
+    are checked against. If a later edit adds `positions.realized_pnl_lamports`
+    to any factor, this fails rather than quietly making confidence track skill.
+    """
+    print("\n[performance blindness: factors read no outcome column]")
+    tables = schema_columns()
+    check("schema parsed for all four readable tables",
+          all(t in tables and tables[t] for t in READABLE_TABLES),
+          str(sorted(tables)))
+
+    banned_columns = sorted(
+        f"{table}.{col}"
+        for table in READABLE_TABLES for col in tables.get(table, ())
+        if any(bad in col.lower() for bad in BANNED))
+    # Non-vacuity: the check must be looking at a schema that really does carry
+    # performance columns, or it proves nothing.
+    check("the schema really does carry performance columns to avoid",
+          len(banned_columns) >= 5, str(banned_columns))
+    check("outcome columns really match the banned fragments",
+          {"pnl", "roi", "value"} <= {bad for bad in BANNED
+                                        for col in banned_columns
+                                        if bad in col.lower()},
+          str(banned_columns))
+
+    print(f"  note  {len(banned_columns)} performance column(s) in the readable "
+          f"tables, e.g. {', '.join(banned_columns[:4])}")
+
+    check("no declared query mentions a banned identifier",
+          all(not _banned_hits(sql) for sql in QUERIES.values()),
+          str({name: sorted(_banned_hits(sql)) for name, sql in QUERIES.items()
+               if _banned_hits(sql)}))
+    for column in banned_columns:
+        bare = column.split(".")[1]
+        check(f"no declared query references {column}",
+              all(not re.search(rf"\b{bare}\b", sql) for sql in QUERIES.values()))
+
+    check("no declared query touches a derived/performance table",
+          all(not re.search(rf"\b({'|'.join(FORBIDDEN_TABLES)})\b", sql)
+              for sql in QUERIES.values()))
+
+    # The statements the functions actually run, not just the constants they are
+    # supposed to use.
+    recorder = RecordingConn(conn)
+    coverage_factor(recorder, "ConfRich")
+    provenance_factor(recorder, "ConfRich")
+    sample_factor(recorder, "ConfRich", {"confidence": {}})
+    recency_factor(recorder, "ConfRich", as_of=AS_OF, config={"confidence": {}})
+    metadata_factor(recorder, "ConfRich")
+
+    check("all five factors executed a statement",
+          len(recorder.statements) == 5, str(len(recorder.statements)))
+    check("no executed statement reads a banned identifier",
+          all(not _banned_hits(sql) for sql in recorder.statements),
+          str([sorted(_banned_hits(sql)) for sql in recorder.statements
+               if _banned_hits(sql)]))
+    check("no executed statement reads a forbidden table",
+          all(not re.search(rf"\b({'|'.join(FORBIDDEN_TABLES)})\b", sql)
+              for sql in recorder.statements))
+    check("each executed statement was the factor's declared query",
+          all(sql in QUERIES.values() for sql in recorder.statements),
+          str([sql.strip().splitlines()[0] for sql in recorder.statements
+               if sql not in QUERIES.values()]))
 
 
 def _finish() -> int:
