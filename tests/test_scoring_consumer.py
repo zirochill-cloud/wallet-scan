@@ -42,6 +42,7 @@ from solscope.consumer import (  # noqa: E402
     ConsumerError,
     PositionExcess,
     StoredAggregate,
+    blend_confidence,
     build_wallet_score,
     cohort_excess_component,
     confidence_factors,
@@ -278,6 +279,64 @@ def logic_checks() -> None:
           unbenchmarked.status == "not_rankable" and "no benchmark" in unbenchmarked.explanation,
           unbenchmarked.explanation)
 
+    print("-- confidence gate (Option 3) --------------------------------------")
+    gate_a = blend_confidence(Decimal(0), Decimal("0.9"), Decimal("1.0"), CONFIG)
+    check("today every wallet fails on existing_confidence = 0",
+          gate_a.confidence == Decimal(0) and gate_a.gate_passed is False, f"{gate_a}")
+    check("the note names the failing conjunct",
+          "existing_confidence below minimum" in gate_a.note, gate_a.note)
+    check("the note quotes both numbers", "(0.00 < 25.00)" in gate_a.note, gate_a.note)
+    check("components record all three inputs and all three thresholds",
+          set(gate_a.components) == {
+              "existing_confidence", "anchor_sample_size", "anchor_coverage",
+              "existing_confidence_min", "anchor_sample_size_min", "anchor_coverage_min",
+          },
+          f"{sorted(gate_a.components)}")
+
+    gate_pass = blend_confidence(Decimal(70), Decimal("0.9"), Decimal("1.0"), CONFIG)
+    check("A with existing confidence 70 passes every conjunct",
+          gate_pass.gate_passed is True and gate_pass.confidence == Decimal(70),
+          f"{gate_pass}")
+    check("a passing gate says so in words", gate_pass.note == "all thresholds met",
+          gate_pass.note)
+
+    gate_b = blend_confidence(Decimal(70), Decimal("0.2"), Decimal("0.6667"), CONFIG)
+    check("B fails on the anchor sample, not on confidence",
+          gate_b.gate_passed is False and "anchor_sample_size below minimum" in gate_b.note,
+          gate_b.note)
+    check("the sample failure quotes 0.20 < 0.30", "(0.20 < 0.30)" in gate_b.note, gate_b.note)
+
+    gate_cov = blend_confidence(Decimal(70), Decimal("0.9"), Decimal("0.4"), CONFIG)
+    check("low coverage fails even with a good sample",
+          gate_cov.gate_passed is False and "anchor_coverage below minimum" in gate_cov.note,
+          gate_cov.note)
+
+    check("the gate never modifies the confidence it was given",
+          (gate_a.confidence, gate_b.confidence, gate_cov.confidence)
+          == (Decimal(0), Decimal(70), Decimal(70)),
+          "gate must not blend")
+
+    expect(ConsumerError,
+           lambda: blend_confidence(Decimal(0), Decimal(0), Decimal(0), {}),
+           "a config without confidence_gate is rejected, not defaulted")
+
+    # The gate must not even be consulted for a wallet that gets no scores row.
+    import solscope.consumer as consumer_mod
+
+    gate_calls: list = []
+    real_blend = consumer_mod.blend_confidence
+
+    def _spy(*args, **kwargs):
+        gate_calls.append(args)
+        return real_blend(*args, **kwargs)
+
+    consumer_mod.blend_confidence = _spy
+    try:
+        build_wallet_score("WalletC", wallet_c(), [], CONFIG, AnchorCounts(0, 3))
+    finally:
+        consumer_mod.blend_confidence = real_blend
+    check("a not_rankable wallet never reaches the gate", gate_calls == [], f"{gate_calls}")
+
     print("-- wallet assembly ------------------------------------------------")
     scored = build_wallet_score("WalletA", wallet_a(), [], CONFIG, AnchorCounts(3, 3))
     check("A is scored", scored is not None)
@@ -292,8 +351,9 @@ def logic_checks() -> None:
         check("gated_by names the missing dimensions",
               all(dim in scored.gated_by for dim in ("profitability", "integrity")),
               scored.gated_by)
-        check("gated_by says the confidence blend is open",
-              "blend open" in scored.gated_by, scored.gated_by)
+        check("gated_by records the confidence gate's reason",
+              "confidence_gate: existing_confidence below minimum" in scored.gated_by,
+              scored.gated_by)
     check("C is not scored at all",
           build_wallet_score("WalletC", wallet_c(), [], CONFIG, AnchorCounts(0, 3)) is None)
     expect(ConsumerError,

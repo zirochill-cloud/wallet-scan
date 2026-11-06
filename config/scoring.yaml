@@ -328,6 +328,19 @@ confidence:
   interpolated_price_cap_value: 50
 
 # ---------------------------------------------------------------------------
+# Confidence gate (Option 3): the two Phase 1b anchor factors GATE ranking; they
+# are not blended into confidence. A wallet ranks only if all three pass.
+# `existing_min` mirrors gates.confidence_min and is repeated here because this
+# conjunction is the ranking decision, while `gates` is the legacy flat list.
+# Until §12's five confidence components exist, existing_confidence is 0.00 for
+# every wallet, so gate_passed is False and nothing ranks. That is intentional.
+# ---------------------------------------------------------------------------
+confidence_gate:
+  existing_min: 25             # existing_confidence (0-100) must reach this
+  sample_min: 0.30             # anchor_sample_size in [0,1]; 0.30 = at least 3 anchors
+  coverage_min: 0.50           # anchor_coverage in [0,1]; at least half measured
+
+# ---------------------------------------------------------------------------
 # Ranking and clustering
 # ---------------------------------------------------------------------------
 ranking:
