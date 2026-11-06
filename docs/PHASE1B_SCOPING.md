@@ -417,6 +417,38 @@ rule silently deleted it. `watch` **is kept**: `scoring.yaml` currently configur
 narrowed to "≥60 that `track` did not claim". `deprioritize` is dropped because `exclude`
 carries its only remaining meaning. See `docs/PHASE1B_SECTION12.md` §5, §6 and §8.
 
+**D16 — the `watch` widening is accepted, deliberately.** Keeping `watch` at 60 as the residual
+"≥60 that `track` did not claim" means a 72-adjusted wallet at 45 confidence, which the old flat
+60–74 window also caught, plus a 78-adjusted wallet at 45 confidence, which it did not. Both are
+high-on-the-score, low-on-the-evidence wallets: the number says look, the evidence says do not
+conclude. Hiding them below `investigate` would delete exactly the case the confidence axis
+exists to mark, so the semantic change is intended, not a side effect of collapsing four bands
+into five.
+
+**D17 — provenance reports both its number and its composition.** A sell-opened position (no
+entry buy, no `entry_swap_signature`) scores 0 on the provenance factor, and that is right: we
+cannot say the entry was priced from the swap because there is no entry. But 0 alone cannot
+tell a reviewer whether the wallet routes badly or our history simply starts after it already
+held the token. `score_evidence` therefore carries `provenance_sell_only_pct` under
+`early_entry`: the share of the wallet's positions that opened on a sell. Same discipline as
+`not_computable` vs `reject` — the number is right, and the explanation must not obscure why it
+looks the way it does. The factor arithmetic is unchanged.
+
+**D18 — S12b is verified against the §6 matrix fixtures, not against convenient data.** The four
+matrix wallets were seeded as real anchor, swap, position and token rows with the design's own
+factor inputs (20 anchors / 19 computed for the rich pair; 4 anchors / 2 computed for the thin
+pair), so the composites are recomputed from the database rather than asserted from stubs. Real
+anchors remain required for S12c and production; this is a specification check.
+
+*D18 found one fixture error, reported rather than papered over:* §6's thin row lists metadata
+0.60 alongside coverage 0.50. Both factors divide by the same set (the anchors the wallet was
+measured on), so with four anchors the metadata factor can only be a quarter — 0.50 is the
+nearest reachable value, and the thin composite is **59.51**, not 60.51. Keeping 0.60 requires
+five measured anchors, which forces coverage to 0.40 and gives 57.51. S12b therefore verifies
+94.33 / 94.33 for the rich pair exactly and 59.51 / 59.51 for the thin pair, and the §6 numbers
+need one edit — metadata 0.60 → 0.50, or five measured anchors with coverage 0.40 — chosen by
+the spec owner, not by the test. §6 itself is unchanged.
+
 **Penalise thinness at one semantic level, not two.** With a gate that can exclude a thin
 wallet, shrinkage should not also drag it to the middle — otherwise a wallet is punished
 once for having few anchors and again for being shrunk toward the prior. `k = 5` keeps a

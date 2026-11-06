@@ -52,6 +52,11 @@ anchor-set change: if it dominates, the set is too thin to support a ranking and
 more/overlapping anchors, not a lower gate. Recorded in `docs/PHASE1B_SCOPING.md` § Q4 (D15)
 and `docs/PHASE1B_SECTION12.md` §5/§8.
 
+**Status: operative.** As of S12b the gate reads `confidence_gate.min_distinct_anchors: 3`
+from `config/scoring.yaml` and applies it alongside `confidence_gate.confidence_min: 40`; a
+wallet below the anchor floor is excluded from ranking whatever its composite. This is the
+threshold to plan anchor selection against.
+
 ---
 
 ## § DATA_LOSS_2026_10

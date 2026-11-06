@@ -374,29 +374,32 @@ lower gate.
 Three separable sub-turns. Each lands green on `bash bootstrap_db.sh` and each keeps the
 previous behaviour selectable until the next is merged.
 
-**S12a — the five factors, hand-computed fixtures.**
-Pure factor functions (one per factor) plus the queries they need, returning
-`(value, explanation, reason_if_missing)`. Fixtures are the four wallets of §6 plus the
-per-factor fixtures in §2. Asserts each factor is independent of every performance column
-(§1), that missing inputs yield 0.0 with a reason and never an imputation, and that the
-anchor-based factors agree with D1's denominator. No composite, no gate change, no schema
-change. Resolves the provenance join (§10.1) or records the tolerance it chose.
+**S12a — the five factors, hand-computed fixtures.** *Done (2026-11-06).*
+Five factor functions in `solscope/confidence.py` (Decimal, 4 dp, `(0, 1]`, 0.0 for a missing
+input, no imputation), plus `schema/004`'s `positions.entry_swap_signature` so provenance is a
+key lookup rather than an approximate join (§10.1). `tests/test_confidence.py` reproduces the
+§2 fixtures (0.95 / 0.90 / 0.40 / 1.00 / 0.9223 / 0.95) against real rows and proves
+performance-blindness mechanically: the schema is parsed so the banned list is non-vacuous,
+and a recording connection checks the statements actually executed, so a factor cannot bypass
+the audit by building SQL inline.
 
-**S12b — composite, gate wiring, config.**
-`confidence_score = 100·Σ w·f`, stored and explained; replaces Option 3's
-`blend_confidence` gate with `confidence >= 40 AND distinct_computed_anchors >= 3`; adds
-`sample_full_credit_at: 5` and `min_distinct_anchors: 3`; migrates `confidence_gate` from
-`existing_min/sample_min/coverage_min` and reconciles the duplicate floor with
-`gates.confidence_min: 25` (§10.3); retires `sample_full_credit_n_eff: 30` (§10.2). This is
-the turn in which wallets can start ranking, so it must show a run where the numbers are no
-longer all zero and a run where a 2-anchor wallet is still excluded.
+**S12b — composite, gate wiring, config.** *Done (2026-11-06).*
+`composite_confidence` and `evaluate_gate` live in `solscope/confidence.py`;
+`scores.confidence_score` is the composite and `sub_scores.confidence` carries it; Option 3's
+`blend_confidence`, `BlendResult` and `confidence_factors` are retired, as are
+`existing_min/sample_min/coverage_min`, `gates.confidence_min` (D12) and
+`sample_full_credit_n_eff` (D11). `sample_full_credit_at: 5` and `min_distinct_anchors: 3` are
+config keys. Verified against the §6 matrix seeded as real rows: 94.33 / 94.33 for the rich
+pair and 59.51 / 59.51 for the thin pair (see § Q4 D18 — the thin row's metadata 0.60 is
+unreachable), with the thin wallets still failing the anchor conjunct. Bands remain
+`exclude` until S12c, so no wallet is ranked on this turn's numbers.
 
-**S12c — band derivation and `solscope scores` read command.**
-Applies §5's rule, decides the `watch`/`deprioritize` question (§10.4), and adds the read-only
-`solscope scores` command so gate outcomes and bands are inspectable from the shell — the
-capability whose absence was noted at the end of the Option 3 turn. No scoring logic changes
-in S12c; if a band value looks wrong there, it is a §5 decision to revisit, not a patch to
-apply.
+**S12c — band derivation and `solscope scores` read command.** *The last implementation step.*
+Applies §5's five bands to the stored `confidence_adjusted_score` and composite — including
+`promising_thin` and the `gated_by` reasons of D13 — and adds the read-only `solscope scores`
+command so gate outcomes and bands are inspectable from the shell, the capability whose
+absence was noted at the end of the Option 3 turn. No scoring logic changes in S12c; if a band
+value looks wrong there, it is a §5 decision to revisit, not a patch to apply.
 
 Ordering is load-bearing: a band rule applied to an all-zero confidence column (S12c before
 S12b) would look correct in tests and be meaningless in production.
