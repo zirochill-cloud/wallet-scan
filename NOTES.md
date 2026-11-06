@@ -39,6 +39,19 @@ the Phase 2 gate — Phase 2 passing says nothing about anchors, and fixing anch
 not affect the reserve-derivation result. Phase 2 may proceed while this stays open; a
 Phase 4 discovery build may not be *trusted* while it is open.
 
+**Rankability threshold (D15, 2026-11-06):** anchor **count per wallet** is now a scoring
+input, not only a discovery concern. The confidence gate requires
+`distinct_computed_anchors >= 3`, so the requirement is ≥3 anchors per wallet *for
+rankability* — not the ≥2 that suffice for a metric to be computed. A wallet with two anchors
+cannot be ranked at any raw score; it is banded `promising_thin` and left unranked. Practical
+consequence for anchor selection: **to rank N wallets, the anchor set must produce ≥3 anchors
+per wallet on average across the rankable population** — i.e. anchors must overlap in their
+buyer sets. A set sized for coverage (each anchor bought by a few wallets) yields 1–2 anchors
+per wallet and a run where almost nothing is rankable. Check `promising_thin` volume after any
+anchor-set change: if it dominates, the set is too thin to support a ranking and the answer is
+more/overlapping anchors, not a lower gate. Recorded in `docs/PHASE1B_SCOPING.md` § Q4 (D15)
+and `docs/PHASE1B_SECTION12.md` §5/§8.
+
 ---
 
 ## § DATA_LOSS_2026_10

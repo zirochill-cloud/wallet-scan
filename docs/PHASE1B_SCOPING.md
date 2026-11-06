@@ -378,6 +378,45 @@ and tying them together makes one calibration edit silently move the validity fl
 the factor is 0.40 rather than 0.20; the gate still excludes, so this changes confidence, not
 who ranks. See `docs/PHASE1B_SECTION12.md` §2.3 and §4.
 
+**D10 — a position names its entry swap.** Price provenance is a judgement about one entry,
+so `positions.entry_swap_signature` is added (`schema/004_positions_entry_swap_signature.sql`),
+populated by `reconstruct()` from the leg that opened the episode, and backfilled by `rebuild()`.
+The alternative — joining on `(address, mint, opened_at)` — is free but its mis-attribution
+rate is undocumented, and provenance is precisely the factor that would be wrong at the margin.
+NULL carries one meaning only: the episode opened on a sell of pre-window inventory, so no
+entry buy exists; such a position earns no provenance credit instead of being dropped.
+
+**D11 — `sample_full_credit_n_eff: 30` is deleted, not renamed.** Two keys that both look
+authoritative about "how much sample is enough", counting different things (trades vs anchors),
+is the confusion D5 exists to end. S12b deletes the key; no deprecation prefix keeps a stale
+number alive where a reader can find it.
+
+**D12 — one confidence floor.** `gates.confidence_min: 25` is deleted in S12b;
+`confidence_gate.confidence_min: 40` is the only threshold. Two acceptable numbers in a config
+file become two different answers depending on which code path runs, which is worse than either
+number alone.
+
+**D13 — collapsing bands must not collapse the reasons.** `watch`/`deprioritize` stop being
+top-level bands (D15), but the distinction between "measured, not strong enough" and "measured,
+not rankable" is preserved in `gated_by`: a wallet under the investigate threshold is
+`band='exclude'`, `gated_by='raw_below_investigate'`; one that fails the anchor conjunct is
+`gated_by='<reason> distinct_anchors below minimum'`. A user asking why a wallet is absent gets
+a different, correct answer in each case.
+
+**D14 — recency is a half-life.** The implemented curve is
+`0.5 ** (days / recency_half_life_days)`; doc 05 §12's `exp(−days/60)` is an e-folding time
+(7 days → 0.889 vs 0.922) and was wrong against the key's own name. The doc is corrected in
+S12a; the key is not renamed.
+
+**D15 — five bands.** `track` (adjusted ≥70 **and** confidence ≥60), `watch` (≥60), `investigate`
+(≥40), `promising_thin` (raw ≥70 **and** confidence ≥30 **and** failed the anchor conjunct only),
+`exclude` (otherwise). `promising_thin` is the band that makes the good+thin fixture visible: raw
+78 at confidence 60.51 in two anchors is a wallet the human should look at, and the three-band
+rule silently deleted it. `watch` **is kept**: `scoring.yaml` currently configures
+`bands.watch: 60`, so it is an existing band kept at its existing threshold, with its meaning
+narrowed to "≥60 that `track` did not claim". `deprioritize` is dropped because `exclude`
+carries its only remaining meaning. See `docs/PHASE1B_SECTION12.md` §5, §6 and §8.
+
 **Penalise thinness at one semantic level, not two.** With a gate that can exclude a thin
 wallet, shrinkage should not also drag it to the middle — otherwise a wallet is punished
 once for having few anchors and again for being shrunk toward the prior. `k = 5` keeps a

@@ -322,10 +322,18 @@ little) and why `exclude_exchange_funders` defaults to true.
 ```
 confidence = 0.30 × coverage            # share of the window's activity actually decoded
            + 0.25 × price_provenance    # share of entries priced from the swap itself
-           + 0.20 × sample_adequacy     # 100 × min(n_eff, 30)/30
-           + 0.15 × recency             # 100 × exp(−days_since_last_trade / 60)
+           + 0.20 × sample_adequacy     # 100 × min(distinct_computed_anchors, 5)/5
+           + 0.15 × recency             # 100 × 0.5 ** (days_since_last_trade / 60)
            + 0.10 × metadata_completeness
 ```
+
+Two corrections to this block, both decided in D5/D11/D14 (`docs/PHASE1B_SCOPING.md` § Q4) and
+specified in `docs/PHASE1B_SECTION12.md` §2: sample adequacy counts **distinct computed
+anchors** against `sample_full_credit_at: 5`, not trades against a 30-trade floor
+(`sample_full_credit_n_eff` is retired in S12b); and recency is a **half-life**, `0.5 **
+(days / recency_half_life_days)`, not `exp(−days/60)`, which is an e-folding time and
+conflicts with the key's own name. The half-life curve is the slower of the two: 7 days →
+0.922, not 0.889.
 
 Hard caps, because these conditions make a high score unreliable regardless of other indicators:
 

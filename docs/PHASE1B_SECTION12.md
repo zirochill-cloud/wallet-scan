@@ -62,10 +62,12 @@ reserves rather than an interpolation, a provider decode or a point-in-time snap
 | How it fails | entries priced from `pool_ohlcv` (candles), `snapshot_api` (current state, valid only at fetch time) or `provider_parsed`; entry timing and valuation become approximate, and the early-entry dimension is precisely about timing |
 | Fixture | 18 of 20 entries `swap_derived` → **0.90** |
 
-**Known join problem, not fixed here:** `positions` carries `entry_price_usd` and
-`opened_at` but no `entry_swap_signature`, so a position cannot be traced to its entry swap
-by key. S12a must either join on `(address, mint, opened_at)` with a documented tolerance, or
-add a column in a migration. See §10.
+**Join, decided (D10):** the position names its entry swap by key. `positions.entry_swap_signature`
+is added by `schema/004_positions_entry_swap_signature.sql`, populated in `reconstruct()` from
+the opening leg and backfilled by `rebuild()`. No approximate `(address, mint, opened_at)`
+join: the column costs one migration and makes the factor exact. NULL has exactly one meaning —
+the episode was opened by a sell of pre-window inventory, so no entry buy exists — and such a
+position earns no provenance credit rather than being dropped from the denominator.
 
 ### 2.3 Sample — weight 0.20
 
@@ -173,8 +175,10 @@ above 40, so confidence alone would rank a 2-anchor wallet; only the anchor conj
 it.
 
 Order of evaluation: quality filter → gates (`integrity`, positions) → confidence gate →
-bands. A wallet that fails any gate gets `band = 'exclude'`, `gated_by` naming the failing
-conjunct, and no rank.
+bands. A wallet that fails any gate gets `gated_by` naming the failing conjunct and no rank.
+For a non-anchor gate failure the band is `exclude`; the anchor conjunct is a *rankability*
+failure rather than an inadmissibility failure, so a wallet that fails only it, with
+`raw >= 70` and `confidence >= 30`, is banded `promising_thin` instead (§5, D15).
 
 ---
 
@@ -182,13 +186,32 @@ conjunct, and no rank.
 
 Bands are assigned to `confidence_adjusted_score = 50 + (score − 50) × confidence/100`.
 
-Proposed rule:
+Rule (five bands, D15):
 
 | Band | Condition |
 |---|---|
-| `track` | `adjusted >= 70` **AND** `confidence >= 60` |
-| `investigate` | `adjusted >= 40` **OR** (`raw >= 70` **AND** `confidence >= 30`) |
-| `exclude` | otherwise, or any gate failed |
+| `track` | gate passed **AND** `adjusted >= 70` **AND** `confidence >= 60` |
+| `watch` | gate passed **AND** `adjusted >= 60` (and not `track`) |
+| `investigate` | gate passed **AND** `adjusted >= 40` (and not above) |
+| `promising_thin` | failed the **anchor conjunct only** **AND** `raw >= 70` **AND** `confidence >= 30` |
+| `exclude` | otherwise, or any other gate failed |
+
+`promising_thin` exists for one case that no other band can reach. A wallet in two anchors
+is excluded by the rankability rule (§4) before any band can speak, so the good+thin fixture —
+raw 78, adjusted 66.94, two anchors — vanished from the output entirely. That is the tool
+hiding a wallet the human should look at: the mechanism now says "we can see this is
+promising; we cannot confirm it; look at it yourself." `investigate` cannot do that job,
+because reaching it requires a passed gate. The band is deliberately **not** `track` and
+carries no rank, so it surfaces the wallet without pretending two anchors are enough. Note
+what it gates on: `raw`, not `adjusted` — a 2-anchor wallet is shrunk hard, and asking a
+shrunken number to clear 70 would ask the wallet to prove again the very thing it lacks
+anchors to prove.
+
+Evaluation order: gate outcome first (any non-anchor gate failure → `exclude`), then the
+anchor conjunct (`promising_thin` or `exclude`), then adjusted thresholds for gate-passing
+wallets. Every excluded or thin wallet keeps a `gated_by` reason (`raw_below_investigate`,
+`distinct_anchors below minimum`), so collapsing four bands into five does not collapse the
+diagnostics — see D13 in `docs/PHASE1B_SCOPING.md` § Q4.
 
 **Current values in `scoring.yaml`, reported rather than replaced:**
 
@@ -202,7 +225,7 @@ bands:
 
 These are four flat thresholds on `confidence_adjusted_score` with no confidence conjunct, and
 doc 05 §13 documents the same four (`≥75` track, `60–74` watch, `45–59` investigate,
-`<45` deprioritize). The proposed rule deviates in three ways, each deliberate:
+`<45` deprioritize). The rule above deviates in five ways, each deliberate:
 
 1. **Track gains a confidence conjunct** (≥60). Without it, a 78-adjusted wallet at 45
    confidence is indistinguishable from a 78-adjusted wallet at 90, and the first is a
@@ -213,13 +236,21 @@ doc 05 §13 documents the same four (`≥75` track, `60–74` watch, `45–59` i
    middling data gets compressed toward 50 and can fall below a flat floor. The override
    surfaces it as `investigate` — never as `track` — so strong-but-thin evidence is visible
    without being ranked alongside strong-and-rich.
-3. **`watch` and `deprioritize` disappear** as bands. `investigate` absorbs the 60–74 range
-   (those wallets are ≥40 and so already investigate), and `deprioritize` was the catch-all
-   that `exclude` now covers. Nothing in the schema breaks — `band` and `recommendation_kind`
-   still permit both values — but leaving two unreachable enum values in place invites a
-   reader to assume a distinction the rule no longer makes. S12c must decide: keep `watch` as
-   a sub-band (adjusted ≥60 AND confidence ≥60), or mark both values deprecated in the schema
-   comment. See §10.
+3. **`watch` survives; `deprioritize` does not.** `watch` is currently configured
+   (`bands.watch: 60`), and D15 keeps it at that threshold, so the band is not new — what
+   changes is its meaning: from the flat 60–74 window to "60 and up that `track` did not
+   claim", which now also catches a 72-adjusted wallet at 45 confidence. The map keeps a
+   place for "worth a look, not a conclusion" instead of forcing it into `investigate`.
+   `deprioritize` had no distinct meaning left once `exclude` existed: it was the catch-all
+   floor, and its value 0 made it exactly "everything else". It is replaced, not renumbered.
+   Both values remain legal in the schema (`band` CHECK, `recommendation_kind`) until S12c
+   either comments `deprioritize` deprecated or drops it with a migration.
+4. **`promising_thin` is added** — the reason this section was rewritten. See above.
+5. **`investigate` loses the raw override.** The old rule's
+   `raw >= 70 AND confidence >= 30` escape hatch only ever rescued wallets that had already
+   passed the gate, and for those the 40 floor plus the adjusted score is the honest test.
+   The genuinely unreachable case was the anchor-constrained one, and that is
+   `promising_thin`'s job, gated on raw because adjusted is shrunken by the missing anchors.
 
 A deviation that is *not* proposed: the confidence-adjusted pull itself. It stays
 `50 + (score−50)·conf/100`, so a low-confidence wallet is neither rewarded nor punished, just
@@ -244,7 +275,7 @@ class, so the only difference between the good and bad member of a pair is the r
 | raw score | 82.00 | 28.00 | 78.00 | 24.00 |
 | `confidence_adjusted_score` | 80.19 | 29.25 | 66.94 | 34.27 |
 | gate | pass | pass | **fail** (2 < 3) | **fail** (2 < 3) |
-| band | `track` | `exclude` | `exclude` | `exclude` |
+| band | `track` | `exclude` | `promising_thin` | `exclude` |
 
 Arithmetic, written out so a reviewer can check it without running code:
 
@@ -260,16 +291,20 @@ identical confidence: 60.51.** No factor causes a difference, because no factor 
 a difference — that is the structural argument of §1, and these two identities are the check
 that it survived implementation.
 
-Read the bands carefully: the *pairs* differ (track vs exclude, both thin wallets excluded),
-which is the whole point. The score separates them; confidence does not. Two things worth
+Read the bands carefully: the *pairs* differ (track vs exclude; promising_thin vs exclude),
+which is the whole point. The score separates them; confidence does not. Three things worth
 noting in the matrix:
 
 - `bad+rich` sits at 29.25, and the band rule would call it `exclude` on the score alone. Rich
   data does not rescue a bad wallet — confidence is not a benefit that good wallets earn.
-- `good+thin` has the *highest* adjusted score among the non-track wallets (66.94) and is
-  still excluded, because two anchors cannot be ranked. It will appear in `scores` with
-  `band='exclude'` and `gated_by='confidence_gate: distinct_anchors below minimum (2 < 3)'`,
-  which is the audit trail a user needs to see why a promising wallet is not on the list.
+- `good+thin` is the row that forced `promising_thin`. It has the *highest* adjusted score
+  among the non-track wallets (66.94), raw 78 and confidence 60.51, and two anchors — so it
+  is unrankable, and under the three-band rule it disappeared. It now appears in `scores`
+  with `band='promising_thin'` and `gated_by='distinct_anchors below minimum'`: visible,
+  unranked, and explained.
+- `bad+thin` shares that confidence (60.51) and is `exclude`, because its raw 24 fails the
+  `raw >= 70` conjunct. The two thin wallets therefore separate on band while sharing
+  confidence exactly — orthogonality holding in the branch that was just added.
 
 ---
 
@@ -316,6 +351,22 @@ Consequences the implementation must preserve:
   raw population's. Confidence is therefore not a measure of how much data Solscope holds
   overall — only of how much it holds about wallets it was willing to score.
 
+**Hard constraint on anchor-set size (D15).** The 3-anchor gate conjunct turns the anchor-set
+requirement from "≥2 anchors per wallet for computation" into "≥3 anchors per wallet for
+rankability." Any wallet in only 2 anchors cannot be ranked regardless of raw score; it
+appears in `promising_thin` instead. This is a documented constraint on anchor-set size: to
+rank N wallets, the anchor set must produce ≥3 anchors per wallet on average for the
+rankable population.
+
+Two consequences follow, and neither is a bug to be worked around later. First, anchor
+selection is now a scoring input: a set of N anchors each bought by roughly half the sampled
+wallets yields about two anchors per wallet, so almost nothing is rankable even though every
+number is computable — the same set sized for overlap produces three or more. Second,
+`promising_thin` will be large exactly when the anchor set is small, so it is the band that
+shows whether the constraint is being met. A run where `promising_thin` dominates is a
+run whose anchor set cannot support a ranking, and the right response is more anchors, not a
+lower gate.
+
 ---
 
 ## §9 Implementation sequencing
@@ -354,12 +405,9 @@ S12b) would look correct in tests and be meaningless in production.
 
 ## §10 Open questions (not fixed here)
 
-1. **Position → entry swap.** `positions` has no entry signature, so price provenance must
-   either join approximately on `(address, mint, opened_at)` — admitting a small
-   mis-attribution rate that must be stated — or a migration adds `entry_swap_signature`.
-   S12a must choose one and say which. Adding the column is the honest option and costs one
-   migration plus backfill; the approximate join is free but makes the factor's error rate
-   undocumented.
+1. **Position → entry swap.** *Resolved by D10.* `positions.entry_swap_signature` is added
+   in `schema/004`, populated in `reconstruct()` from the opening buy and backfilled by
+   `rebuild()`. No approximate join. NULL means no entry buy exists (sell-opened episode).
 2. **`sample_full_credit_n_eff: 30`** still exists under `confidence:` and describes a
    trade-count scale, while D5's `sample_full_credit_at: 5` counts distinct anchors. Two keys
    that both look authoritative about "how much sample is enough" is precisely the confusion
@@ -370,13 +418,12 @@ S12b) would look correct in tests and be meaningless in production.
    authority, and the other must be removed rather than left as a stale second opinion. The
    proposal is that 40 wins and 25 is deleted, since 25 was calibrated when confidence was a
    flat placeholder.
-4. **`watch` and `deprioritize`.** The proposed band rule never emits them, but the schema's
-   `band` CHECK and `recommendation_kind` enum still allow them, and doc 05 §13 documents
-   four bands. S12c keeps `watch` as a sub-band or marks both deprecated; silently leaving
-   unreachable enum values is the one option to avoid.
-5. **Recency formula text.** doc 05 §12 writes `exp(−days/60)`; the config key is
-   `recency_half_life_days`. S12a corrects the doc to `0.5 ** (days/60)`. If the intended
-   curve was the faster e-folding decay, the key must be renamed instead — but the two cannot
-   keep disagreeing.
+4. **`watch` and `deprioritize`.** *Resolved for the rule by D13/D15:* `watch` is kept
+   (currently configured at 60) as the residual ≥60 band, `deprioritize` is replaced by
+   `exclude`, and the two exclusion reasons stay distinguishable in `gated_by`. S12c still
+   owns the enum comment so no reader assumes `deprioritize` is reachable.
+5. **Recency formula text.** *Resolved by D14:* the curve is a half-life,
+   `0.5 ** (days / recency_half_life_days)`; doc 05 §12 said `exp(−days/60)`, which is an
+   e-folding time, and it is corrected rather than the key being renamed.
 
 None of these block S12a except 1, which must be decided within it.
