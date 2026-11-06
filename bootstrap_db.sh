@@ -165,7 +165,8 @@ echo "solscope_bootstrap: $n tables"
 # Every migration file must be RECORDED, not merely present on disk. A new
 # schema file that silently fails to apply would otherwise show up as "a couple
 # of tables missing" much later, in a test that is about something else.
-for m in 001_init 002_anchor_registry 003_wallet_aggregates; do
+for m in 001_init 002_anchor_registry 003_wallet_aggregates \
+         004_positions_entry_swap_signature; do
   found=$(psqlq solscope_bootstrap "select count(*) from schema_migrations where name='${m#*_}'") \
     || die "could not read schema_migrations"
   [ "$found" = "1" ] || die "migration $m was not recorded (schema_migrations has $found rows for it)"

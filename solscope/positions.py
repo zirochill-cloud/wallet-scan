@@ -71,6 +71,7 @@ class SwapLeg:
     mcap_usd: float | None = None
     liquidity_usd: float | None = None
     token_age_seconds: int | None = None
+    signature: str | None = None     # the tx that carried this swap
 
 
 @dataclass(frozen=True)
@@ -125,6 +126,10 @@ class Episode:
     entry_liquidity_usd: float | None = None
     entry_token_age_seconds: int | None = None
     entry_slot: int | None = None
+    # The swap that opened the episode, so price provenance is a key lookup and
+    # not a guess (doc §12, D10). None when the episode opened on a sell: there
+    # is no entry buy to point at.
+    entry_swap_signature: str | None = None
 
     # Inventory provenance.
     inventory_origin: str = "swap_only"
@@ -282,6 +287,9 @@ def reconstruct(
             entry_liquidity_usd=leg.liquidity_usd,
             entry_token_age_seconds=leg.token_age_seconds,
             entry_slot=leg.slot,
+            # A sell-opened episode has no entry buy; recording the sell here
+            # would claim its price was the entry price, which it is not.
+            entry_swap_signature=leg.signature if leg.side == "buy" else None,
         )
 
     def close_episode(ep: Episode, leg: SwapLeg) -> None:
@@ -481,7 +489,8 @@ def load_legs(conn, wallet: str, mint: str) -> list[SwapLeg]:
     rows = conn.execute(
         "SELECT id, side, base_amount_raw, quote_amount_raw, base_decimals, "
         "       quote_decimals, slot, event_time, COALESCE(fee_lamports, 0), "
-        "       exec_price_usd, mcap_usd, liquidity_usd, token_age_seconds "
+        "       exec_price_usd, mcap_usd, liquidity_usd, token_age_seconds, "
+        "       signature "
         "FROM swaps WHERE trader = %s AND base_mint = %s "
         "ORDER BY slot, id", (wallet, mint)).fetchall()
     return [
@@ -492,7 +501,7 @@ def load_legs(conn, wallet: str, mint: str) -> list[SwapLeg]:
                 price_usd=float(r[9]) if r[9] is not None else None,
                 mcap_usd=float(r[10]) if r[10] is not None else None,
                 liquidity_usd=float(r[11]) if r[11] is not None else None,
-                token_age_seconds=r[12])
+                token_age_seconds=r[12], signature=r[13])
         for r in rows
     ]
 
@@ -516,10 +525,11 @@ def persist(conn, episode: Episode) -> int:
         "  realized_pnl_lamports, realized_pnl_usd, unrealized_pnl_usd, "
         "  unrealized_price_usd, unrealized_as_of, roi, hold_seconds, "
         "  entry_price_usd, entry_mcap_usd, entry_liquidity_usd, "
-        "  entry_token_age_seconds, entry_slot, inventory_origin, "
+        "  entry_token_age_seconds, entry_slot, entry_swap_signature, "
+        "  inventory_origin, "
         "  transfer_in_qty_raw, pnl_completeness, pnl_limitation) "
         "VALUES (%s,'solana',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
-        "        %s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING position_id",
+        "        %s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING position_id",
         (episode.wallet, episode.mint, episode.opened_at, episode.opened_slot,
          episode.closed_at, episode.is_closed, episode.total_buy_qty_raw,
          episode.total_sell_qty_raw, episode.open_qty_raw,
@@ -529,7 +539,8 @@ def persist(conn, episode: Episode) -> int:
          episode.unrealized_price_usd, episode.unrealized_as_of, episode.roi,
          episode.hold_seconds, episode.entry_price_usd, episode.entry_mcap_usd,
          episode.entry_liquidity_usd, episode.entry_token_age_seconds,
-         episode.entry_slot, episode.inventory_origin,
+         episode.entry_slot, episode.entry_swap_signature,
+         episode.inventory_origin,
          episode.transfer_in_qty_raw, episode.pnl_completeness,
          episode.pnl_limitation)).fetchone()
     position_id = int(row[0])

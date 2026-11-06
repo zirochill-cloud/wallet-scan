@@ -47,12 +47,13 @@ def check(name: str, condition: bool, detail: str = "") -> None:
 def leg(side: str, base: int, quote: int, *, slot: int = 1,
         minute: int = 0, swap_id: int = 1, fee: int = 0,
         quote_dec: int = 9, base_dec: int = 6,
-        price_usd: float | None = None) -> SwapLeg:
+        price_usd: float | None = None,
+        signature: str | None = None) -> SwapLeg:
     return SwapLeg(
         swap_id=swap_id, side=side, base_amount_raw=base, quote_amount_raw=quote,
         base_decimals=base_dec, quote_decimals=quote_dec, slot=slot,
         block_time=T0 + _dt.timedelta(minutes=minute), fee_lamports=fee,
-        price_usd=price_usd,
+        price_usd=price_usd, signature=signature,
     )
 
 
@@ -256,6 +257,29 @@ def main() -> int:
     check("report names wallet and token", "W1 / M1" in text)
     check("report shows a realized number", "+0." in text or "-0." in text)
 
+    print("\n[entry swap signature points at the opening buy]")
+    book = reconstruct("W1", "M1", [
+        leg("buy", 1_000_000, 100_000_000, slot=1, swap_id=1,
+            signature="sig-first-buy"),
+        leg("sell", 1_000_000, 150_000_000, slot=2, minute=5, swap_id=2,
+            signature="sig-exit"),
+        leg("buy", 1_000_000, 90_000_000, slot=3, minute=9, swap_id=3,
+            signature="sig-second-buy"),
+    ])
+    check("two episodes", len(book.episodes) == 2, str(len(book.episodes)))
+    check("first episode names its opening buy",
+          book.episodes[0].entry_swap_signature == "sig-first-buy",
+          str(book.episodes[0].entry_swap_signature))
+    check("re-entry names its own opening buy, not the exit",
+          book.episodes[1].entry_swap_signature == "sig-second-buy",
+          str(book.episodes[1].entry_swap_signature))
+    check("a sell-opened episode names no entry buy",
+          reconstruct("W1", "M1", [
+              leg("sell", 1_000_000, 150_000_000, slot=1,
+                  signature="sig-naked-sell"),
+          ]).episodes[0].entry_swap_signature is None,
+          "a sell was recorded as an entry")
+
     # ---------------------------------------------------------------- DB
     print("\n[database round-trip]")
     try:
@@ -324,11 +348,40 @@ def main() -> int:
         check("lot_matches written", conn.execute(
             "SELECT count(*) FROM lot_matches").fetchone()[0] == 1)
 
+        # D10: the persisted signature is the *opening buy*, checked against the
+        # swaps table rather than against what the test itself passed in.
+        first_buy = conn.execute(
+            "SELECT signature FROM swaps WHERE trader = 'WalletA' "
+            "  AND base_mint = 'MintA' AND side = 'buy' "
+            "ORDER BY slot, instruction_index, id LIMIT 1").fetchone()[0]
+        stored = conn.execute(
+            "SELECT entry_swap_signature FROM positions").fetchone()[0]
+        check("entry_swap_signature persisted", stored is not None, "NULL")
+        check("entry_swap_signature is the first buy", stored == first_buy,
+              f"{stored!r} != {first_buy!r}")
+        check("entry_swap_signature is a real swap", conn.execute(
+            "SELECT count(*) FROM swaps WHERE signature = %s AND side = 'buy'",
+            (stored,)).fetchone()[0] >= 1)
+
         rebuild(conn, wallet="WalletA")
         check("rebuild is idempotent (still one position)", conn.execute(
             "SELECT count(*) FROM positions").fetchone()[0] == 1)
         check("rebuild is idempotent (still one match)", conn.execute(
             "SELECT count(*) FROM lot_matches").fetchone()[0] == 1)
+
+        # Backfill path: rows written before 004 carry NULL, and rebuild() is the
+        # mechanism that fills them — no separate one-off UPDATE script.
+        conn.execute("UPDATE positions SET entry_swap_signature = NULL")
+        check("pre-004 row has no signature", conn.execute(
+            "SELECT count(*) FROM positions WHERE entry_swap_signature IS NULL"
+        ).fetchone()[0] == 1)
+        rebuild(conn, wallet="WalletA")
+        filled = conn.execute(
+            "SELECT count(*) FROM positions WHERE entry_swap_signature IS NOT NULL"
+        ).fetchone()[0]
+        total = conn.execute("SELECT count(*) FROM positions").fetchone()[0]
+        check("rebuild backfills every buy-opened episode", filled == total,
+              f"{filled} of {total} filled")
 
         # A closed episode may coexist with an open one (doc 04 §2), but a
         # *second* open position for the same wallet+token may not — that is the
@@ -348,6 +401,43 @@ def main() -> int:
                 check("a second open position is rejected", True)
         finally:
             conn.rollback()
+
+        # Backfill across more than one pair (D10). rebuild() is the supported
+        # backfill path for a database written before 004, so it must fill every
+        # wallet-token pair, not just the first one it iterates.
+        conn.execute("INSERT INTO tokens (mint, chain_id) VALUES ('MintB','solana')")
+        conn.execute("INSERT INTO wallets (address, chain_id) VALUES ('WalletB','solana')")
+        for sig, slot in (("sig-b-buy", 20), ("sig-b-sell", 21)):
+            conn.execute(
+                "INSERT INTO transactions (signature, chain_id, slot, err) "
+                "VALUES (%s,'solana',%s,false)", (sig, slot))
+        for sig, slot, base, quote, side in (
+                ("sig-b-buy", 20, 500_000, 50_000_000, "buy"),
+                ("sig-b-sell", 21, 500_000, 60_000_000, "sell")):
+            conn.execute(
+                "INSERT INTO swaps (signature, instruction_index, slot, chain_id, "
+                "  trader, base_mint, quote_mint, side, base_amount_raw, "
+                "  quote_amount_raw, base_decimals, quote_decimals, exec_price_quote, "
+                "  price_provenance, fee_lamports, decoder_version, event_time) "
+                "VALUES (%s,0,%s,'solana','WalletB','MintB',"
+                "        'So11111111111111111111111111111111111111112',%s,%s,%s,6,9,%s,"
+                "        'swap_derived',1000,'phase2/1',%s)",
+                (sig, slot, side, base, quote, quote / base,
+                 T0 + _dt.timedelta(minutes=slot)))
+        conn.commit()
+        conn.execute("UPDATE positions SET entry_swap_signature = NULL")
+        rebuild(conn)
+        total = conn.execute("SELECT count(*) FROM positions").fetchone()[0]
+        filled = conn.execute(
+            "SELECT count(*) FROM positions WHERE entry_swap_signature IS NOT NULL"
+        ).fetchone()[0]
+        check("backfill covers every wallet-token pair", filled == total and total >= 2,
+              f"{filled} of {total} filled")
+        check("backfill leaves no NULL where an entry buy exists", conn.execute(
+            "SELECT count(*) FROM positions WHERE entry_swap_signature IS NULL"
+        ).fetchone()[0] == 0)
+        print(f"  note  backfill: {filled} of {total} position(s) filled, "
+              f"{total - filled} NULL")
     finally:
         conn.close()
 
