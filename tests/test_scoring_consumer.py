@@ -38,6 +38,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from solscope.config import load_scoring  # noqa: E402
 from solscope.consumer import (  # noqa: E402
+    AnchorCounts,
     ConsumerError,
     PositionExcess,
     StoredAggregate,
@@ -173,25 +174,26 @@ def logic_checks() -> None:
           close(shrunk, "50") and factor == 0, f"{shrunk}/{factor}")
 
     print("-- early_entry: all metrics computed (wallet A) --------------------")
-    early_a = early_entry_dimension(wallet_a(), CONFIG)
+    early_a = early_entry_dimension(wallet_a(), CONFIG, AnchorCounts(3, 3))
     check("composite is 76.40", early_a.status == "computed" and close(early_a.raw_value, "76.4"),
           f"status={early_a.status} raw={early_a.raw_value}")
     check("weights used sum to 1.0", sum(early_a.weights_used.values()) == Decimal(1),
           f"{early_a.weights_used}")
-    check("sample size is the anchors behind the value (9)", early_a.sample_size == 9,
-          f"{early_a.sample_size}")
-    check("shrunk value is 59.90 (n=9 -> factor 0.375)", close(early_a.shrunk_value, "59.9"),
-          f"{early_a.shrunk_value}")
+    check("sample size counts anchors, not metric rows: 3 metrics on 3 anchors -> 3 (not 9)",
+          early_a.sample_size == 3, f"{early_a.sample_size}")
+    check("shrunk value is 54.40 (n=3 -> factor 3/18 = 0.1667)",
+          close(early_a.shrunk_value, "54.4"), f"{early_a.shrunk_value}")
     check("explanation names the components and the shrinkage",
           "max_subsequent_return 4.0000 -> 80.00" in early_a.explanation
-          and "shrinkage 0.3750" in early_a.explanation,
+          and "shrinkage 0.1667" in early_a.explanation
+          and "n=3" in early_a.explanation,
           early_a.explanation)
-    check("confidence factors for A are 0.9 and 1.0",
-          confidence_factors(wallet_a()) == (Decimal("0.9"), Decimal("1")),
-          f"{confidence_factors(wallet_a())}")
+    check("confidence factors for A are 0.3 and 1.0 (3 anchors, not 9 metric rows)",
+          confidence_factors(AnchorCounts(3, 3)) == (Decimal("0.3"), Decimal("1")),
+          f"{confidence_factors(AnchorCounts(3, 3))}")
 
     print("-- early_entry: one metric dropped (wallet B) ----------------------")
-    early_b = early_entry_dimension(wallet_b(), CONFIG)
+    early_b = early_entry_dimension(wallet_b(), CONFIG, AnchorCounts(3, 3))
     check("composite re-normalised to 67.1428571", close(early_b.raw_value, "67.1428571"),
           f"{early_b.raw_value}")
     check("only two weights survive and they sum to 1.0",
@@ -199,27 +201,32 @@ def logic_checks() -> None:
           f"{early_b.weights_used}")
     check("the dropped metric is named in the explanation",
           "buyer_rank_at_entry=not_rankable" in early_b.explanation, early_b.explanation)
-    check("shrunk value is 54.89796 (n=6 -> factor 0.2857)",
-          close(early_b.shrunk_value, "54.89796", "1e-5"), f"{early_b.shrunk_value}")
+    check("shrunk value is 52.85714 (n=3 -> factor 0.1667)",
+          close(early_b.shrunk_value, "52.85714", "1e-5"), f"{early_b.shrunk_value}")
     check("A and B stay distinguishable after re-normalisation",
           early_a.shrunk_value > early_b.shrunk_value,
           f"{early_a.shrunk_value} vs {early_b.shrunk_value}")
 
     print("-- early_entry: nothing rankable (wallet C) ------------------------")
-    early_c = early_entry_dimension(wallet_c(), CONFIG)
+    early_c = early_entry_dimension(wallet_c(), CONFIG, AnchorCounts(0, 3))
     check("C is not_rankable", early_c.status == "not_rankable" and early_c.raw_value is None,
           f"status={early_c.status} raw={early_c.raw_value}")
     check("C keeps its measured-anchor count group", early_c.anchor_count_computed == 3,
           f"{early_c.anchor_count_computed}")
-    empty_c = early_entry_dimension({}, CONFIG)
+    empty_c = early_entry_dimension({}, CONFIG, AnchorCounts(0, 0))
     check("no aggregates at all -> not_computable", empty_c.status == "not_computable",
           f"{empty_c.status}")
-    check("no aggregates -> coverage 0.0, not 1.0",
-          confidence_factors({}) == (Decimal(0), Decimal(0)), f"{confidence_factors({})}")
+    check("no anchor rows -> coverage 0.0, not 1.0",
+          confidence_factors(AnchorCounts(0, 0)) == (Decimal(0), Decimal(0)),
+          f"{confidence_factors(AnchorCounts(0, 0))}")
+    check("anchors with no computed metric -> coverage 0.0",
+          confidence_factors(AnchorCounts(0, 3)) == (Decimal(0), Decimal(0)),
+          f"{confidence_factors(AnchorCounts(0, 3))}")
     check("a not_computable aggregate is dropped like a not_rankable one",
           early_entry_dimension(
               {MR: agg(MR, None, status="not_computable", computed=0), PV: agg(PV, "0.5")},
               CONFIG,
+              AnchorCounts(3, 3),
           ).status == "computed",
           "one survivor must still score")
 
@@ -265,7 +272,7 @@ def logic_checks() -> None:
           unbenchmarked.explanation)
 
     print("-- wallet assembly ------------------------------------------------")
-    scored = build_wallet_score("WalletA", wallet_a(), [], CONFIG)
+    scored = build_wallet_score("WalletA", wallet_a(), [], CONFIG, AnchorCounts(3, 3))
     check("A is scored", scored is not None)
     if scored is not None:
         check("overall is the neutral 50.00 (five dimensions unbuilt)",
@@ -280,9 +287,10 @@ def logic_checks() -> None:
               scored.gated_by)
         check("gated_by says the confidence blend is open",
               "blend open" in scored.gated_by, scored.gated_by)
-    check("C is not scored at all", build_wallet_score("WalletC", wallet_c(), [], CONFIG) is None)
+    check("C is not scored at all",
+          build_wallet_score("WalletC", wallet_c(), [], CONFIG, AnchorCounts(0, 3)) is None)
     expect(ConsumerError,
-           lambda: early_entry_dimension(wallet_a(), {"early_entry": {}}),
+           lambda: early_entry_dimension(wallet_a(), {"early_entry": {}}, AnchorCounts(3, 3)),
            "a scoring config missing weights is rejected, not guessed")
 
 
@@ -374,7 +382,7 @@ def db_checks() -> bool:
         aggregate_pct_entries_before_volume_spike,
     )
     from solscope.aggregation import AnchorMetricRow
-    from solscope.anchor_writer import write_aggregate
+    from solscope.anchor_writer import write_aggregate, write_metric
     from solscope.db import migrate
 
     conninfo, dbname = target
@@ -415,6 +423,36 @@ def db_checks() -> bool:
         ):
             write_aggregate(conn, wallet, aggregate, RULE)
 
+    def seed_anchor_metrics(conn, wallet, prefix, total, computed_per_metric):
+        """Real ``anchor_wallet_metrics`` rows: the D1 denominator reads these.
+
+        ``computed_per_metric`` says how many of the wallet's ``total`` anchors have
+        a computed value for each metric, which is what makes wallet B's buyer rank
+        ``not_rankable`` (1 of 3) while its other two metrics are measured on all 3.
+        """
+        ids = [
+            int(
+                conn.execute(
+                    "INSERT INTO anchors (mint, source, created_by_rule_version) "
+                    "VALUES (%s, 'synthetic', 'test-consumer') RETURNING anchor_id",
+                    (f"{prefix}-mint-{index}",),
+                ).fetchone()[0]
+            )
+            for index in range(total)
+        ]
+        for metric, computed in computed_per_metric.items():
+            for index, anchor_id in enumerate(ids):
+                measured = index < computed
+                write_metric(
+                    conn,
+                    anchor_id=anchor_id,
+                    wallet=wallet,
+                    metric_name=metric,
+                    status="computed" if measured else "NOT_COMPUTABLE",
+                    value=Decimal("1") if measured else None,
+                    window_days=30 if metric == MR else None,
+                )
+
     print("\n-- run_consumer (real PostgreSQL) --------------------------------")
     with psycopg.connect(**conn_kwargs) as conn:
         applied = [m.path.name for m in migrate(conn)]
@@ -424,6 +462,10 @@ def db_checks() -> bool:
         store(conn, "WalletB", [4, 4, 4], [0.02], [0.5, 0.5, 0.5])
         store(conn, "WalletC", [4], [0.02], [0.5])
         store(conn, "WalletD", [4, 4, 4], [0.02, 0.02, 0.02], [0.5, 0.5, 0.5])
+        seed_anchor_metrics(conn, "WalletA", "A", 3, {MR: 3, BR: 3, PV: 3})
+        seed_anchor_metrics(conn, "WalletB", "B", 3, {MR: 3, BR: 1, PV: 3})
+        seed_anchor_metrics(conn, "WalletC", "C", 1, {MR: 0, BR: 0, PV: 0})
+        seed_anchor_metrics(conn, "WalletD", "D", 3, {MR: 3, BR: 3, PV: 3})
         seed_positions(conn)
 
         report = run_consumer(
@@ -463,12 +505,12 @@ def db_checks() -> bool:
             "shrinkage_applied, confidence FROM sub_scores WHERE score_id=%s AND dimension='early_entry'",
             (a[0],),
         ).fetchone()
-        check("A's early_entry raw is 76.40, shrunk 59.90",
-              close(early_a[0], "76.4") and close(early_a[2], "59.9"), f"{early_a}")
+        check("A's early_entry raw is 76.40, shrunk 54.40",
+              close(early_a[0], "76.4") and close(early_a[2], "54.4"), f"{early_a}")
         check("A's early_entry weight is the dimension weight 0.25",
               close(early_a[3], "0.25"), f"{early_a[3]}")
-        check("A's early_entry sample size is 9 with shrinkage 0.3750",
-              early_a[4] == 9 and close(early_a[5], "0.375", "1e-4"), f"{early_a}")
+        check("a 3-anchor wallet measured on 3 metrics stores sample_size 3, not 9",
+              early_a[4] == 3 and close(early_a[5], "0.1667", "1e-4"), f"{early_a}")
         check("A's early_entry confidence column is left NULL (blend open)",
               early_a[6] is None, f"{early_a[6]}")
 
@@ -478,8 +520,8 @@ def db_checks() -> bool:
             "AND dimension='early_entry'"
         ).fetchone()
         # raw_value is NUMERIC(38,10); shrunk_value is NUMERIC(6,2) and rounds.
-        check("B's re-normalised early_entry is 67.1428571420 / 54.90",
-              close(early_b[0], "67.1428571420", "1e-9") and close(early_b[1], "54.90"),
+        check("B's re-normalised early_entry is 67.1428571420 / 52.86",
+              close(early_b[0], "67.1428571420", "1e-9") and close(early_b[1], "52.86"),
               f"{early_b}")
 
         token_d = conn.execute(
@@ -522,8 +564,8 @@ def db_checks() -> bool:
                 (a[0],),
             ).fetchall()
         )
-        check("anchor_sample_size is stored as evidence (0.9)",
-              close(factors.get("anchor_sample_size"), "0.9"), f"{factors}")
+        check("anchor_sample_size is stored as evidence (0.3 = 3 anchors / 10)",
+              close(factors.get("anchor_sample_size"), "0.3"), f"{factors}")
         check("anchor_coverage is stored as evidence (1.0)",
               close(factors.get("anchor_coverage"), "1.0"), f"{factors}")
         check("the confidence sub-score explains that the blend is open",

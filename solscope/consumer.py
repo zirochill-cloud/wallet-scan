@@ -53,13 +53,26 @@ prior exactly as ``config/scoring.yaml`` specifies
 (``shrunk = n/(n+k) * raw + k/(n+k) * prior``).  Shrinkage is applied because the
 whole point of this phase is that anchor counts are small.
 
+Anchor counts, not metric rows
+------------------------------
+``anchor_sample_size`` counts **distinct anchors**::
+
+    SELECT count(DISTINCT anchor_id) FROM anchor_wallet_metrics
+    WHERE wallet = %s AND status = 'computed'
+
+Summing ``anchor_count_computed`` over the three metrics would count each anchor up
+to three times (one row per metric) and credit a 3-anchor wallet with 9 independent
+observations.  ``anchor_coverage`` uses the same denominator: distinct computed
+anchors / distinct anchors.  Neither is available from ``wallet_aggregates``, which
+stores per-metric counts only.
+
 Confidence: computed, stored, **not blended**
 ---------------------------------------------
 ``anchor_sample_size = min(1, computed_anchors / 10)`` and
-``anchor_coverage = computed / (computed + excluded)`` are computed per wallet and
-stored as evidence (and in the ``confidence`` sub-score's explanation).  They are
-**not** blended into ``confidence_score``: the blend formula is still open, so
-inventing one here would produce a number the next turn would have to disprove.
+``anchor_coverage = computed / total`` are computed per wallet and stored as
+evidence (and in the ``confidence`` sub-score's explanation).  They are **not**
+blended into ``confidence_score``: the blend formula is still open, so inventing one
+here would produce a number the next turn would have to disprove.
 ``confidence_score`` is therefore 0.00 with ``gated_by`` saying why — which has the
 honest consequence that the configured ``confidence_min`` gate excludes the row
 from ranking.  That is correct for a partial score: this phase produces
@@ -87,6 +100,7 @@ from .config import CONFIG_DIR, ConfigError, load_scoring
 __all__ = [
     "EARLY_ENTRY_METRICS",
     "PIPELINE_VERSION",
+    "AnchorCounts",
     "ConsumerError",
     "ConsumerReport",
     "DimensionScore",
@@ -99,6 +113,7 @@ __all__ = [
     "early_entry_dimension",
     "excess_for",
     "launch_week_key",
+    "load_anchor_counts",
     "load_position_excesses",
     "renormalise",
     "run_consumer",
@@ -207,6 +222,20 @@ class StoredAggregate:
             raise ConsumerError(
                 f"{self.metric_name}: status {self.status!r} with value {self.value!r}"
             )
+
+
+@dataclass(frozen=True)
+class AnchorCounts:
+    """Distinct anchors behind one wallet's aggregates — anchors, not metric rows.
+
+    ``computed`` counts anchors with at least one ``status='computed'`` metric row;
+    ``total`` counts every anchor with any row at all.  A 3-anchor wallet whose three
+    metrics all computed therefore has ``AnchorCounts(3, 3)``, not 9: counting metric
+    rows would triple-count the same three observations.
+    """
+
+    computed: int
+    total: int
 
 
 @dataclass(frozen=True)
@@ -379,7 +408,9 @@ def _explain(
 
 
 def early_entry_dimension(
-    aggregates: Mapping[str, StoredAggregate], config: Mapping[str, Any]
+    aggregates: Mapping[str, StoredAggregate],
+    config: Mapping[str, Any],
+    anchors: AnchorCounts,
 ) -> DimensionScore:
     """The ``early_entry`` composite for one wallet.
 
@@ -387,6 +418,10 @@ def early_entry_dimension(
     then re-normalises the rest. When nothing survives, the dimension reports
     ``not_rankable`` if any anchor was measured anywhere (the wallet exists in the
     data but cannot be ranked) and ``not_computable`` otherwise.
+
+    ``anchors`` must count distinct anchors, not metric rows: it is the ``n`` in the
+    shrinkage formula, and counting one anchor three times would overstate the
+    evidence behind the score by a factor of three.
     """
     section = config["early_entry"]
     weights = _dimension_weights(section, EARLY_ENTRY_METRICS)
@@ -455,9 +490,7 @@ def early_entry_dimension(
     composite = _HUNDRED * sum(
         (component.weight_used * component.credit for component in components), Decimal(0)
     )
-    sample_size = sum(
-        aggregates[component.metric].anchor_count_computed for component in components
-    )
+    sample_size = anchors.computed
     shrunk, factor = shrink(composite, sample_size, k=k, prior=prior)
 
     extra = f"metrics_used={len(components)}/{len(EARLY_ENTRY_METRICS)}"
@@ -480,21 +513,18 @@ def early_entry_dimension(
     )
 
 
-def confidence_factors(
-    aggregates: Mapping[str, StoredAggregate],
-) -> tuple[Decimal, Decimal]:
-    """``(anchor_sample_size, anchor_coverage)`` — computed, never blended here.
+def confidence_factors(anchors: AnchorCounts) -> tuple[Decimal, Decimal]:
+    """``(anchor_sample_size, anchor_coverage)`` from distinct anchor counts.
 
-    ``anchor_sample_size = min(1, computed_anchors / 10)`` over the three metrics.
-    ``anchor_coverage = computed / (computed + excluded)``, and 0.0 when there were
-    no anchor rows at all: no coverage, not full coverage.
+    ``anchor_sample_size = min(1, computed_anchors / 10)``;
+    ``anchor_coverage = computed / total``, and 0.0 when the wallet has no anchor
+    rows at all — no coverage, not full coverage.  Both denominators are anchors, so
+    a wallet measured on three metrics by the same three anchors is 3/10, not 9/10.
     """
-    computed = sum(a.anchor_count_computed for a in aggregates.values())
-    excluded = sum(a.anchor_count_excluded for a in aggregates.values())
+    computed = max(0, int(anchors.computed))
+    total = max(0, int(anchors.total))
     sample = min(_ONE, Decimal(computed) / ANCHOR_SAMPLE_FULL_CREDIT)
-    coverage = (
-        Decimal(computed) / Decimal(computed + excluded) if (computed + excluded) else Decimal(0)
-    )
+    coverage = Decimal(computed) / Decimal(total) if total else Decimal(0)
     return _q4(sample), _q4(coverage)
 
 
@@ -628,6 +658,7 @@ def build_wallet_score(
     aggregates: Mapping[str, StoredAggregate],
     excesses: Sequence[PositionExcess],
     config: Mapping[str, Any],
+    anchors: AnchorCounts,
 ) -> WalletScore | None:
     """Assemble one wallet's scores row, or ``None`` when it must not be scored.
 
@@ -636,11 +667,11 @@ def build_wallet_score(
     ``token_selection`` would put a wallet into the scores table on the strength of
     a dimension that is not this phase's subject.
     """
-    early = early_entry_dimension(aggregates, config)
+    early = early_entry_dimension(aggregates, config, anchors)
     if not early.is_computed:
         return None
     token = token_selection_dimension(excesses, config)
-    sample, coverage = confidence_factors(aggregates)
+    sample, coverage = confidence_factors(anchors)
 
     confidence = Decimal(0)
     overall = PARTIAL_OVERALL_SCORE
@@ -697,6 +728,37 @@ def load_aggregates(conn, rule_version: str) -> dict[str, dict[str, StoredAggreg
             coverage=_dec(coverage),
         )
     return grouped
+
+
+def load_anchor_counts(conn, wallets: Sequence[str]) -> dict[str, AnchorCounts]:
+    """Distinct compute/total anchor counts per wallet.
+
+    This is the D1 query, deliberately at anchor grain::
+
+        SELECT wallet, count(DISTINCT anchor_id) FILTER (WHERE status = 'computed'),
+                       count(DISTINCT anchor_id)
+        FROM anchor_wallet_metrics
+        WHERE wallet = ANY(%s)
+        GROUP BY wallet
+
+    ``wallet_aggregates`` cannot answer it: it stores per-metric counts, so summing
+    them counts one anchor once per metric it was measured on.
+    """
+    wallet_list = [w for w in wallets]
+    if not wallet_list:
+        return {}
+    rows = conn.execute(
+        """
+        SELECT wallet,
+               count(DISTINCT anchor_id) FILTER (WHERE status = 'computed'),
+               count(DISTINCT anchor_id)
+        FROM anchor_wallet_metrics
+        WHERE wallet = ANY(%s)
+        GROUP BY wallet
+        """,
+        (wallet_list,),
+    ).fetchall()
+    return {wallet: AnchorCounts(int(computed), int(total)) for wallet, computed, total in rows}
 
 
 def load_position_excesses(
@@ -1095,13 +1157,15 @@ def run_consumer(
 
     aggregates = load_aggregates(conn, rule_version)
     report.wallets_seen = len(aggregates)
+    anchor_counts = load_anchor_counts(conn, list(aggregates))
 
     prepared: list[WalletScore] = []
     for wallet in sorted(aggregates):
+        anchors = anchor_counts.get(wallet, AnchorCounts(0, 0))
         excesses = load_position_excesses(conn, wallet, as_of, config)
-        wallet_score = build_wallet_score(wallet, aggregates[wallet], excesses, config)
+        wallet_score = build_wallet_score(wallet, aggregates[wallet], excesses, config, anchors)
         if wallet_score is None:
-            early = early_entry_dimension(aggregates[wallet], config)
+            early = early_entry_dimension(aggregates[wallet], config, anchors)
             report.skipped[wallet] = f"early_entry_{early.status}"
             continue
         prepared.append(wallet_score)
