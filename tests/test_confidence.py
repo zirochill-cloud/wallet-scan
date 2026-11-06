@@ -31,9 +31,13 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from solscope.confidence import (  # noqa: E402
-    QUERIES, coverage_factor, metadata_factor, provenance_factor, recency_factor,
-    sample_factor,
+    QUERIES, composite_confidence, confidence_adjusted_score, coverage_factor,
+    evaluate_gate, metadata_factor, provenance_factor, recency_factor,
+    sample_factor, sell_only_pct,
 )
+from solscope.config import load_scoring  # noqa: E402
+
+CONFIG = load_scoring()
 
 _failures: list[str] = []
 
@@ -186,39 +190,61 @@ def _entry(conn, wallet: str, mint: str, n: int, *, trusted: bool,
         (wallet, mint, event_time, 1000 + n, sig))
 
 
-def seed(conn) -> None:
-    """Rich (20 anchors), thin (2 anchors) and five-anchor wallets.
+def _metric(conn, anchor_id: int, wallet: str, *, computed: bool) -> None:
+    conn.execute(
+        "INSERT INTO anchor_wallet_metrics (anchor_id, wallet, metric_name, "
+        "  value, status) VALUES (%s,%s,'buyer_rank_at_entry',%s,%s)",
+        (anchor_id, wallet, 0.5 if computed else None,
+         "computed" if computed else "NOT_COMPUTABLE"))
 
-    The rich wallet is the design's sec 2 fixture exactly: 19 of 20 anchors
-    computed, 18 of 20 entries priced from the swap, 19 of 20 tokens resolved,
-    last trade 7 days before AS_OF.
+
+def _seed_rich(conn, wallet: str, prefix: str) -> None:
+    """The design sec 6 rich row: 20 anchors / 19 computed, 20 entries / 18 priced
+    from the swap, 19 of 20 tokens resolved, last trade 7 days before AS_OF."""
+    last = AS_OF - _dt.timedelta(days=7)
+    for i in range(20):
+        mint = f"{prefix}{i:02d}"
+        _token(conn, mint, resolved=(i < 19))
+        _metric(conn, _anchor(conn, mint), wallet, computed=(i < 19))
+        _entry(conn, wallet, mint, i, trusted=(i < 18), event_time=last)
+
+
+def _seed_thin(conn, wallet: str, prefix: str) -> None:
+    """The design sec 6 thin row: 4 anchors / 2 computed, 4 entries / 3 priced, 2 of
+    4 tokens resolved, last trade 14 days before AS_OF.
+
+    Design sec 6 also gives this row metadata 0.60, which cannot exist: metadata's
+    denominator is the anchors measured, so with four of them the factor can only
+    be a quarter. 0.50 is the nearest value, and the composite is 59.51 rather than
+    the design's 60.51. Reported as a fixture error; the doc is not edited here.
+    """
+    last = AS_OF - _dt.timedelta(days=14)
+    for i in range(4):
+        mint = f"{prefix}{i}"
+        _token(conn, mint, resolved=(i < 2))
+        _metric(conn, _anchor(conn, mint), wallet, computed=(i < 2))
+        _entry(conn, wallet, mint, i, trusted=(i < 3), event_time=last)
+
+
+def seed(conn) -> None:
+    """The four sec 6 matrix wallets, plus five-anchor and distinct-anchor wallets.
+
+    GoodRich/BadRich share every factor input and differ only in a performance
+    score the factors cannot read - that is the point. Same for ThinGood/ThinBad.
     """
     conn.execute("INSERT INTO wallets (address, chain_id) "
-                 "VALUES ('ConfRich','solana'), ('ConfThin','solana'), "
+                 "VALUES ('GoodRich','solana'), ('BadRich','solana'), "
+                 "        ('ThinGood','solana'), ('ThinBad','solana'), "
                  "        ('ConfFive','solana')")
-    last = AS_OF - _dt.timedelta(days=7)
+    _seed_rich(conn, "GoodRich", "GR")
+    _seed_rich(conn, "BadRich", "BR")
+    _seed_thin(conn, "ThinGood", "TG")
+    _seed_thin(conn, "ThinBad", "TB")
 
-    for i in range(20):
-        mint = f"Rich{i:02d}"
-        _token(conn, mint, resolved=(i < 19))     # Rich19 has unresolved metadata
-        anchor_id = _anchor(conn, mint)
-        computed = i < 19                          # Rich19's metric was excluded
-        conn.execute(
-            "INSERT INTO anchor_wallet_metrics (anchor_id, wallet, metric_name, "
-            "  value, status) VALUES (%s,'ConfRich','buyer_rank_at_entry',%s,%s)",
-            (anchor_id, 0.5 if computed else None,
-             "computed" if computed else "NOT_COMPUTABLE"))
-        _entry(conn, "ConfRich", mint, i, trusted=(i < 18), event_time=last)
-
-    for wallet, count in (("ConfThin", 2), ("ConfFive", 5)):
-        for i in range(count):
-            mint = f"{wallet}{i}"
-            _token(conn, mint)
-            anchor_id = _anchor(conn, mint)
-            conn.execute(
-                "INSERT INTO anchor_wallet_metrics (anchor_id, wallet, metric_name, "
-                "  value, status) VALUES (%s,%s,'buyer_rank_at_entry',0.5,'computed')",
-                (anchor_id, wallet))
+    for i in range(5):
+        mint = f"ConfFive{i}"
+        _token(conn, mint)
+        _metric(conn, _anchor(conn, mint), "ConfFive", computed=True)
 
     # A wallet whose two anchors carry three metric rows between them: one anchor
     # measured twice, one not measurable. Distinct-anchor coverage is 1/2; a
@@ -249,50 +275,139 @@ def db_checks(dsn: str) -> None:
         seed(conn)
         print("\n[sec 2 fixtures against real rows]")
         check("coverage: 19 computed of 20 anchors -> 0.9500",
-              coverage_factor(conn, "ConfRich") == dec("0.9500"),
-              str(coverage_factor(conn, "ConfRich")))
+              coverage_factor(conn, "GoodRich") == dec("0.9500"),
+              str(coverage_factor(conn, "GoodRich")))
         check("provenance: 18 of 20 entries swap_derived -> 0.9000",
-              provenance_factor(conn, "ConfRich") == dec("0.9000"),
-              str(provenance_factor(conn, "ConfRich")))
+              provenance_factor(conn, "GoodRich") == dec("0.9000"),
+              str(provenance_factor(conn, "GoodRich")))
         check("sample: 19 computed anchors -> 1.0000",
-              sample_factor(conn, "ConfRich", {"confidence": {}}) == dec("1.0000"))
+              sample_factor(conn, "GoodRich", CONFIG) == dec("1.0000"))
         check("recency: last trade 7 days ago -> 0.9223",
-              recency_factor(conn, "ConfRich", as_of=AS_OF,
-                             config={"confidence": {}}) == dec("0.9223"),
-              str(recency_factor(conn, "ConfRich", as_of=AS_OF,
-                                 config={"confidence": {}})))
+              recency_factor(conn, "GoodRich", as_of=AS_OF,
+                             config=CONFIG) == dec("0.9223"),
+              str(recency_factor(conn, "GoodRich", as_of=AS_OF,
+                                 config=CONFIG)))
         check("metadata: 19 of 20 anchor tokens resolved -> 0.9500",
-              metadata_factor(conn, "ConfRich") == dec("0.9500"),
-              str(metadata_factor(conn, "ConfRich")))
+              metadata_factor(conn, "GoodRich") == dec("0.9500"),
+              str(metadata_factor(conn, "GoodRich")))
 
         check("coverage counts distinct anchors, not metric rows (1/2, not 2/3)",
               coverage_factor(conn, "ConfRows") == dec("0.5000"),
               str(coverage_factor(conn, "ConfRows")))
         check("sample: 2 computed anchors -> 0.4000",
-              sample_factor(conn, "ConfThin", {"confidence": {}}) == dec("0.4000"),
-              str(sample_factor(conn, "ConfThin", {"confidence": {}})))
+              sample_factor(conn, "ThinGood", CONFIG) == dec("0.4000"),
+              str(sample_factor(conn, "ThinGood", CONFIG)))
         check("sample: 5 computed anchors -> 1.0000",
-              sample_factor(conn, "ConfFive", {"confidence": {}}) == dec("1.0000"))
+              sample_factor(conn, "ConfFive", CONFIG) == dec("1.0000"))
 
+        print("\n[sec 6 matrix: the composite from real anchor rows]")
+        composites = {
+            wallet: composite_confidence(conn, wallet, as_of=AS_OF, config=CONFIG)
+            for wallet in ("GoodRich", "BadRich", "ThinGood", "ThinBad")
+        }
+        check("good+rich composite is 94.33",
+              composites["GoodRich"] == dec("94.33"), str(composites))
+        check("good+rich and bad+rich have identical confidence: 94.33",
+              composites["GoodRich"] == composites["BadRich"], str(composites))
+        check("good+thin composite is 59.51 (design sec 6 says 60.51)",
+              composites["ThinGood"] == dec("59.51"), str(composites))
+        check("good+thin and bad+thin have identical confidence: 59.51",
+              composites["ThinGood"] == composites["ThinBad"], str(composites))
+        print(f"  note  design sec 6 thin row says 60.51; metadata 0.60 needs 5 "
+              f"measured anchors, which forces coverage to 0.40 (57.51). The "
+              f"4-anchor row above uses metadata 0.50 instead -> {composites['ThinGood']}")
+
+        print("\n[sec 4 gate: two conjuncts, two config keys]")
+        rich = evaluate_gate(conn, "GoodRich", as_of=AS_OF, config=CONFIG)
+        bad_rich = evaluate_gate(conn, "BadRich", as_of=AS_OF, config=CONFIG)
+        thin = evaluate_gate(conn, "ThinGood", as_of=AS_OF, config=CONFIG)
+        check("rich wallet passes both conjuncts",
+              rich.gate_passed is True and rich.gate_reason == "all thresholds met",
+              rich.gate_reason)
+        check("a bad wallet with rich data passes the same gate",
+              bad_rich.gate_passed is True, bad_rich.gate_reason)
+        check("19 distinct computed anchors is what the conjunct reads",
+              rich.distinct_anchors == 19, str(rich.distinct_anchors))
+        check("thin wallet fails on anchors, not on confidence",
+              thin.gate_passed is False
+              and thin.gate_reason == "distinct_anchors below minimum (2 < 3)",
+              thin.gate_reason)
+        check("the thin composite (59.51) is far above the 40 floor",
+              thin.composite_confidence > CONFIG["confidence_gate"]["confidence_min"])
+        check("the gate result carries factors, weights and thresholds",
+              set(rich.components) == {"coverage", "price_provenance", "sample",
+                                       "recency", "metadata"}
+              and set(rich.weights) == set(rich.components)
+              and rich.thresholds["min_distinct_anchors"] == 3
+              and rich.thresholds["confidence_min"] == 40,
+              f"{sorted(rich.thresholds)}")
+
+        zero = evaluate_gate(conn, "Nobody", as_of=AS_OF, config=CONFIG)
+        check("a wallet with no anchors has composite 0.00, not NULL",
+              zero.composite_confidence == dec("0.00"), str(zero.composite_confidence))
+        check("and fails on the anchor conjunct, naming zero anchors",
+              zero.gate_passed is False
+              and zero.gate_reason == "distinct_anchors below minimum (0 < 3)",
+              zero.gate_reason)
+
+        print("\n[config keys are read, not hardcoded]")
+        import copy
+        strict = copy.deepcopy(CONFIG)
+        strict["confidence_gate"]["confidence_min"] = 65
+        five = evaluate_gate(conn, "ConfFive", as_of=AS_OF, config=CONFIG)
+        five_strict = evaluate_gate(conn, "ConfFive", as_of=AS_OF, config=strict)
+        # 0.30 coverage + 0.20 sample (5/5) + 0.10 metadata; no positions, no swaps.
+        check("ConfFive's composite is 60.00 by default",
+              five.composite_confidence == dec("60.00"), str(five.composite_confidence))
+        check("raising confidence_min to 65 rejects it on confidence",
+              five_strict.gate_passed is False
+              and "confidence below minimum (60.00 < 65.00)" == five_strict.gate_reason,
+              five_strict.gate_reason)
+        anchors_strict = copy.deepcopy(CONFIG)
+        anchors_strict["confidence_gate"]["min_distinct_anchors"] = 6
+        check("raising min_distinct_anchors to 6 rejects 5 anchors",
+              evaluate_gate(conn, "ConfFive", as_of=AS_OF,
+                            config=anchors_strict).gate_reason
+              == "distinct_anchors below minimum (5 < 6)")
+        divisor = copy.deepcopy(CONFIG)
+        divisor["confidence"]["sample_full_credit_at"] = 10
+        check("raising sample_full_credit_at to 10 moves the composite 60.00 -> 50.00",
+              evaluate_gate(conn, "ConfFive", as_of=AS_OF,
+                            config=divisor).composite_confidence == dec("50.00"))
+
+        print("\n[sec 5 adjusted arithmetic, at the design's raws]")
+        check("good+rich raw 82 at 94.33 -> 80.19",
+              confidence_adjusted_score(Decimal("82"), rich.composite_confidence)
+              == dec("80.19"),
+              str(confidence_adjusted_score(Decimal("82"), rich.composite_confidence)))
+        check("bad+rich raw 28 at 94.33 -> 29.25",
+              confidence_adjusted_score(Decimal("28"), rich.composite_confidence)
+              == dec("29.25"))
+        check("good+thin raw 78 at 59.51 -> 66.66 (design's 60.51 gives 66.94)",
+              confidence_adjusted_score(Decimal("78"), thin.composite_confidence)
+              == dec("66.66"),
+              str(confidence_adjusted_score(Decimal("78"), thin.composite_confidence)))
+        check("bad+thin raw 24 at 59.51 -> 34.53 (design's 60.51 gives 34.27)",
+              confidence_adjusted_score(Decimal("24"), thin.composite_confidence)
+              == dec("34.53"))
         print("\n[missing inputs score 0.0, never NULL]")
         for name, value in (
                 ("coverage", coverage_factor(conn, "Nobody")),
                 ("provenance", provenance_factor(conn, "Nobody")),
-                ("sample", sample_factor(conn, "Nobody", {"confidence": {}})),
+                ("sample", sample_factor(conn, "Nobody", CONFIG)),
                 ("recency", recency_factor(conn, "Nobody", as_of=AS_OF,
-                                           config={"confidence": {}})),
+                                           config=CONFIG)),
                 ("metadata", metadata_factor(conn, "Nobody"))):
             check(f"{name} of an unmeasured wallet is 0.0",
                   value == Decimal("0.0000") and value is not None, str(value))
 
         print("\n[factor values are 4 dp and inside [0, 1]]")
         values = {
-            "coverage": coverage_factor(conn, "ConfRich"),
-            "provenance": provenance_factor(conn, "ConfRich"),
-            "sample": sample_factor(conn, "ConfRich", {"confidence": {}}),
-            "recency": recency_factor(conn, "ConfRich", as_of=AS_OF,
-                                      config={"confidence": {}}),
-            "metadata": metadata_factor(conn, "ConfRich"),
+            "coverage": coverage_factor(conn, "GoodRich"),
+            "provenance": provenance_factor(conn, "GoodRich"),
+            "sample": sample_factor(conn, "GoodRich", CONFIG),
+            "recency": recency_factor(conn, "GoodRich", as_of=AS_OF, config=CONFIG),
+            "metadata": metadata_factor(conn, "GoodRich"),
         }
         check("all five factors are Decimal",
               all(isinstance(v, Decimal) for v in values.values()))
@@ -303,13 +418,20 @@ def db_checks(dsn: str) -> None:
               all(v == v.quantize(Decimal("0.0001")) for v in values.values()),
               str(values))
 
+        print("\n[D17: sell-only diagnostic is separate from the factor]")
+        check("GoodRich has no sell-opened positions, so 0.00%",
+              sell_only_pct(conn, "GoodRich") == dec("0.00"),
+              str(sell_only_pct(conn, "GoodRich")))
+        check("a wallet with no positions reports 0.00%, not an error",
+              sell_only_pct(conn, "Nobody") == dec("0.00"))
+
         print("\n[D1 denominator agreement]")
         agg = conn.execute(
             "SELECT count(DISTINCT anchor_id) FILTER (WHERE status = 'computed'), "
             "       count(DISTINCT anchor_id) "
-            "FROM anchor_wallet_metrics WHERE wallet = 'ConfRich'").fetchone()
+            "FROM anchor_wallet_metrics WHERE wallet = 'GoodRich'").fetchone()
         check("coverage equals the D1 anchor ratio exactly",
-              coverage_factor(conn, "ConfRich") ==
+              coverage_factor(conn, "GoodRich") ==
               (Decimal(int(agg[0])) / Decimal(int(agg[1]))).quantize(
                   Decimal("0.0001")),
               f"{agg[0]}/{agg[1]}")

@@ -29,18 +29,24 @@ Conventions, all from the design:
   is attached in S12b, where the composite is explained and stored.
 * ``ZERO`` is a legitimate answer ("no evidence"), not an error.
 
-Not in this module: the composite (§3), the gate (§4) and band derivation (§5) —
-those are S12b and S12c.
+The composite (§3) and the gate (§4) also live here: ``composite_confidence``
+weights the five factors, ``evaluate_gate`` decides rankability, and
+``confidence_adjusted_score`` applies the confidence pull. Band derivation (§5) is
+S12c and is deliberately absent — a band rule applied before the composite is
+stored would look correct in tests and mean nothing.
 """
 from __future__ import annotations
 
 import datetime as _dt
-from decimal import Decimal, ROUND_HALF_UP
+from dataclasses import dataclass
+from decimal import Decimal, ROUND_HALF_EVEN, ROUND_HALF_UP
 from typing import Any, Mapping
 
 ZERO = Decimal("0")
 ONE = Decimal("1")
-_PLACES = Decimal("0.0001")
+_TWO_DP = Decimal("0.01")
+_FOUR_DP = Decimal("0.0001")
+_PLACES = _FOUR_DP
 
 #: Distinct computed anchors at which more anchors stop adding confidence (D5).
 DEFAULT_SAMPLE_FULL_CREDIT_AT = 5
@@ -108,6 +114,16 @@ METADATA_SQL = """
     LEFT JOIN tokens t ON t.mint = a.mint
 """
 
+#: Diagnostic (D17): how many of the wallet's positions opened on a sell, i.e. on
+#: inventory acquired before the observed window. Provenance counts those as zero
+#: credit — correctly — but the number alone cannot tell a reviewer whether the
+#: wallet routes badly or simply predates observation. This is that distinction.
+SELL_ONLY_SQL = """
+    SELECT count(*) FILTER (WHERE entry_swap_signature IS NULL), count(*)
+    FROM positions
+    WHERE address = %s
+"""
+
 #: Every statement this module executes, keyed by factor name.
 QUERIES: dict[str, str] = {
     "coverage": COVERAGE_SQL,
@@ -115,6 +131,16 @@ QUERIES: dict[str, str] = {
     "sample": SAMPLE_SQL,
     "recency": RECENCY_SQL,
     "metadata": METADATA_SQL,
+    "provenance_sell_only_pct": SELL_ONLY_SQL,
+}
+
+#: Factor name -> the ``confidence:`` key that weights it.
+WEIGHT_KEYS: dict[str, str] = {
+    "coverage": "weight_coverage",
+    "price_provenance": "weight_price_provenance",
+    "sample": "weight_sample",
+    "recency": "weight_recency",
+    "metadata": "weight_metadata",
 }
 
 
@@ -240,3 +266,164 @@ def metadata_factor(conn, wallet: str) -> Decimal:
     """
     resolved, anchors = _counts(conn, METADATA_SQL, wallet)
     return _ratio(resolved, anchors)
+
+
+def sell_only_pct(conn, wallet: str) -> Decimal:
+    """Share of the wallet's positions that opened on a sell — 0..100, 2 dp (D17).
+
+    Not a factor. A sell-opened position has no entry buy, so provenance gives it
+    no credit; the percentage says whether that was the wallet routing badly or
+    its history simply starting before our observation window. Zero when the
+    wallet has no positions (then the provenance factor is 0 for a different,
+    already-recorded reason: no entries at all).
+    """
+    row = conn.execute(SELL_ONLY_SQL, (wallet,)).fetchone()
+    if row is None or int(row[1] or 0) <= 0:
+        return ZERO.quantize(_TWO_DP)
+    return (Decimal(int(row[0] or 0)) * Decimal(100) / Decimal(int(row[1]))).quantize(
+        _TWO_DP, rounding=ROUND_HALF_UP)
+
+
+# ---------------------------------------------------------------------------
+# the composite and the gate
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class GateResult:
+    """What the confidence gate decided for one wallet, with everything it used.
+
+    ``components`` holds the five factor values, ``weights`` the configured
+    weight of each, and ``thresholds`` the two gate keys actually applied — so
+    the evidence table can be rebuilt from this object without re-reading config.
+    ``gate_reason`` names the first failing conjunct in words; on success it is
+    ``"all thresholds met"``.
+    """
+
+    wallet: str
+    composite_confidence: Decimal
+    distinct_anchors: int
+    gate_passed: bool
+    gate_reason: str
+    components: Mapping[str, Decimal]
+    weights: Mapping[str, Decimal]
+    thresholds: Mapping[str, Decimal]
+
+
+def factor_values(conn, wallet: str, *, as_of: _dt.datetime,
+                  config: Mapping[str, Any] | None) -> dict[str, Decimal]:
+    """All five factors for one wallet, in the design's reporting order."""
+    return {
+        "coverage": coverage_factor(conn, wallet),
+        "price_provenance": provenance_factor(conn, wallet),
+        "sample": sample_factor(conn, wallet, config),
+        "recency": recency_factor(conn, wallet, as_of=as_of, config=config),
+        "metadata": metadata_factor(conn, wallet),
+    }
+
+
+def _weights(config: Mapping[str, Any] | None) -> dict[str, Decimal]:
+    """Read the five weights; a missing or non-unit set is an error, not a guess."""
+    section = _confidence_config(config)
+    weights: dict[str, Decimal] = {}
+    for name, key in WEIGHT_KEYS.items():
+        if key not in section:
+            raise ValueError(f"scoring.yaml: missing confidence.{key}")
+        weights[name] = Decimal(str(section[key]))
+    total = sum(weights.values(), ZERO)
+    if total != ONE:
+        raise ValueError(
+            f"scoring.yaml: confidence weights sum to {total}, expected 1.00")
+    return weights
+
+
+def _composite(factors: Mapping[str, Decimal],
+               weights: Mapping[str, Decimal]) -> Decimal:
+    """``100 x sum(weight x factor)``, clamped to [0, 100], stored at 2 dp.
+
+    No re-normalisation: a zero factor costs exactly its weight. Rescaling the
+    others would let a wallet with unmeasured provenance end up *more* confident
+    than one with measured-and-poor provenance.
+    """
+    total = sum((weights[name] * factors[name] for name in WEIGHT_KEYS), ZERO)
+    value = (Decimal(100) * total).quantize(_TWO_DP, rounding=ROUND_HALF_UP)
+    return max(ZERO, min(Decimal(100), value))
+
+
+def composite_confidence(conn, wallet: str, *, as_of: _dt.datetime,
+                         config: Mapping[str, Any] | None) -> Decimal:
+    """The §12 confidence score for one wallet — 0..100 at 2 dp.
+
+    Always computed, for every scored wallet: all five factors are read even when
+    their inputs are missing, and a missing input contributes 0.0 rather than
+    dropping the term. ``0.00`` is a valid, reportable value meaning "no
+    evidence"; it is never NULL and never an error.
+    """
+    factors = factor_values(conn, wallet, as_of=as_of, config=config)
+    return _composite(factors, _weights(config))
+
+
+def _gate_thresholds(config: Mapping[str, Any] | None) -> dict[str, Decimal]:
+    """The two gate keys. Never fall back to a hardcoded default (D5/D12)."""
+    section = config.get("confidence_gate") if isinstance(config, Mapping) else None
+    if not isinstance(section, Mapping):
+        raise ValueError("scoring.yaml: missing 'confidence_gate' thresholds")
+    thresholds: dict[str, Decimal] = {}
+    for key in ("confidence_min", "min_distinct_anchors"):
+        if key not in section:
+            raise ValueError(f"scoring.yaml: missing confidence_gate.{key}")
+        thresholds[key] = Decimal(str(section[key]))
+    return thresholds
+
+
+def evaluate_gate(conn, wallet: str, *, as_of: _dt.datetime,
+                  config: Mapping[str, Any] | None) -> GateResult:
+    """Decide whether a wallet may be ranked — §4's two conjuncts.
+
+    ``composite >= confidence_gate.confidence_min`` **and**
+    ``distinct_computed_anchors >= confidence_gate.min_distinct_anchors``.
+
+    The anchor conjunct is checked first because it is the validity rule: a
+    wallet with two anchors cannot be ranked whatever its confidence says, and
+    naming the anchors (rather than a confidence that may be well above 40) is
+    the honest explanation. Both numbers are config keys; neither is derived
+    from the other.
+    """
+    factors = factor_values(conn, wallet, as_of=as_of, config=config)
+    weights = _weights(config)
+    composite = _composite(factors, weights)
+    anchors, _total = _counts(conn, COVERAGE_SQL, wallet)
+    thresholds = _gate_thresholds(config)
+
+    minimum_anchors = int(thresholds["min_distinct_anchors"])
+    minimum_confidence = thresholds["confidence_min"]
+    if anchors < minimum_anchors:
+        passed, reason = False, (f"distinct_anchors below minimum "
+                                 f"({anchors} < {minimum_anchors})")
+    elif composite < minimum_confidence:
+        passed, reason = False, (f"confidence below minimum "
+                                 f"({composite} < {minimum_confidence.quantize(_TWO_DP)})")
+    else:
+        passed, reason = True, "all thresholds met"
+
+    return GateResult(
+        wallet=wallet,
+        composite_confidence=composite,
+        distinct_anchors=anchors,
+        gate_passed=passed,
+        gate_reason=reason,
+        components=factors,
+        weights=weights,
+        thresholds=thresholds,
+    )
+
+
+def confidence_adjusted_score(overall: Decimal, confidence: Decimal) -> Decimal:
+    """``50 + (overall - 50) * confidence/100`` — doc 05 §12's pull to neutral.
+
+    Low confidence neither rewards nor punishes: it declines to make the claim,
+    so a 90 at 40 confidence becomes 66 and a 20 at 40 becomes 38.
+    """
+    overall = Decimal(overall)
+    confidence = Decimal(confidence)
+    return (Decimal(50) + (overall - Decimal(50)) * (confidence / Decimal(100))
+            ).quantize(_TWO_DP, rounding=ROUND_HALF_EVEN)

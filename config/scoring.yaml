@@ -28,7 +28,10 @@ weights:
 # ---------------------------------------------------------------------------
 gates:
   integrity_min: 30            # below this: likely insider/operator, not a transferable signal
-  confidence_min: 25           # below this: too little evidence to rank at all
+  # confidence_min was deleted (D12). The confidence floor is
+  # confidence_gate.confidence_min below, and it is the only one: two acceptable
+  # numbers in one config file become two different answers depending on which
+  # code path runs.
   min_closed_positions: 5      # below this: report as unscored, not scored-zero
   exclude_when_data_reason_unknown: true
 
@@ -320,7 +323,13 @@ confidence:
   weight_recency: 0.15           # days since last observed trade
   weight_metadata: 0.10          # share of tokens with resolved mint metadata
 
-  sample_full_credit_n_eff: 30
+  # Distinct computed anchors at which more anchors stop adding confidence (D5).
+  # The gate's three-anchor floor is a separate key below, deliberately: a divisor
+  # answers "how many anchors is plenty", a gate answers "how few is too few", and
+  # tying them makes one calibration edit silently move the validity floor.
+  # `sample_full_credit_n_eff: 30` was deleted (D11) — it counted trades, not
+  # anchors, and two keys for one question is the confusion D5 ended.
+  sample_full_credit_at: 5
   recency_half_life_days: 60
   coverage_cap_below: 0.50       # coverage under this caps confidence at `coverage_cap_value`
   coverage_cap_value: 40
@@ -328,17 +337,17 @@ confidence:
   interpolated_price_cap_value: 50
 
 # ---------------------------------------------------------------------------
-# Confidence gate (Option 3): the two Phase 1b anchor factors GATE ranking; they
-# are not blended into confidence. A wallet ranks only if all three pass.
-# `existing_min` mirrors gates.confidence_min and is repeated here because this
-# conjunction is the ranking decision, while `gates` is the legacy flat list.
-# Until §12's five confidence components exist, existing_confidence is 0.00 for
-# every wallet, so gate_passed is False and nothing ranks. That is intentional.
+# Confidence gate (§12 §4): a wallet ranks only if BOTH conjuncts pass.
+# Option 3's `existing_min` / `sample_min` / `coverage_min` are retired (S12b):
+# they gated on a confidence that was 0.00 for every wallet, so nothing ranked.
 # ---------------------------------------------------------------------------
 confidence_gate:
-  existing_min: 25             # existing_confidence (0-100) must reach this
-  sample_min: 0.30             # anchor_sample_size in [0,1]; 0.30 = at least 3 anchors
-  coverage_min: 0.50           # anchor_coverage in [0,1]; at least half measured
+  confidence_min: 40           # the §12 composite (0-100) must reach this
+  # A validity rule, not a calibration: the composite's `sample_full_credit_at`
+  # answers "how many anchors is plenty", this answers "how few is too few to
+  # rank at all". Out of a thin anchor set, promising wallets land here and stop
+  # at S12c's `promising_thin` band instead of disappearing.
+  min_distinct_anchors: 3      # distinct COMPUTED anchors, same denominator as D1
 
 # ---------------------------------------------------------------------------
 # Ranking and clustering

@@ -100,19 +100,37 @@ def main() -> int:
     )
     check("deprioritize is the floor band", bands["deprioritize"] == 0)
 
-    # Gates
+    # Gates. `gates.confidence_min` was deleted (D12): one confidence floor, in
+    # `confidence_gate`, so a run cannot consult two different thresholds.
     gates = cfg["gates"]
-    for key in ("integrity_min", "confidence_min", "min_closed_positions"):
+    for key in ("integrity_min", "min_closed_positions"):
         check(f"gates.{key} present and numeric", isinstance(gates.get(key), (int, float)))
+    check("gates.confidence_min is gone (D12: one floor only)",
+          "confidence_min" not in gates, f"{sorted(gates)}")
     check(
         "integrity gate is reachable: 100 - max stack of penalties can fall below it",
         sum(cfg["integrity"]["penalties"].values()) > gates["integrity_min"],
         "no combination of penalties could ever trip the gate",
     )
+    gate_cfg = cfg["confidence_gate"]
+    check("confidence_gate.confidence_min present and numeric",
+          isinstance(gate_cfg.get("confidence_min"), (int, float)))
+    check("confidence_gate.min_distinct_anchors is its own key (D5)",
+          gate_cfg.get("min_distinct_anchors") == 3, f"{gate_cfg}")
     check(
         "confidence gate is below the 'track' band requirement",
-        gates["confidence_min"] < bands["track"],
+        gate_cfg["confidence_min"] < bands["track"],
     )
+    check("Option 3's three gate keys are retired",
+          not {"existing_min", "sample_min", "coverage_min"} & set(gate_cfg),
+          f"{sorted(gate_cfg)}")
+    check("confidence.sample_full_credit_at is the D5 divisor",
+          cfg["confidence"].get("sample_full_credit_at") == 5,
+          f"{cfg['confidence'].get('sample_full_credit_at')}")
+    check("confidence.sample_full_credit_n_eff is gone (D11)",
+          "sample_full_credit_n_eff" not in cfg["confidence"])
+    check("the sample divisor is separate from the gate floor (D5)",
+          cfg["confidence"]["sample_full_credit_at"] != gate_cfg["min_distinct_anchors"])
 
     # Shrinkage
     shr = cfg["shrinkage"]

@@ -6,10 +6,10 @@ fixture rather than with itself.
 
 Layer 2 runs the consumer against real PostgreSQL with four wallets:
 
-* **A** — all three early-entry metrics computed, no positions.
-* **B** — one metric ``not_rankable``, so the other two must be re-normalised.
-* **C** — every metric ``not_rankable``, so no ``scores`` row may be emitted.
-* **D** — like A, plus closed positions and cohort benchmarks, so
+* **A** - all three early-entry metrics computed, no positions.
+* **B** - one metric ``not_rankable``, so the other two must be re-normalised.
+* **C** - every metric ``not_rankable``, so no ``scores`` row may be emitted.
+* **D** - like A, plus closed positions and cohort benchmarks, so
   ``token_selection`` executes end to end (launch-week cohort, an ``all_tokens``
   fallback, and a position whose launch time is unknown).
 
@@ -39,16 +39,19 @@ from decimal import Decimal
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
+from solscope.confidence import (  # noqa: E402
+    QUERIES,
+    confidence_adjusted_score,
+    evaluate_gate,
+)
 from solscope.config import load_scoring  # noqa: E402
 from solscope.consumer import (  # noqa: E402
     AnchorCounts,
     ConsumerError,
     PositionExcess,
     StoredAggregate,
-    blend_confidence,
     build_wallet_score,
     cohort_excess_component,
-    confidence_factors,
     credit_for,
     early_entry_dimension,
     excess_for,
@@ -199,9 +202,6 @@ def logic_checks() -> None:
           and "shrinkage 0.3750" in early_a.explanation
           and "n=3" in early_a.explanation,
           early_a.explanation)
-    check("confidence factors for A are 0.3 and 1.0 (3 anchors, not 9 metric rows)",
-          confidence_factors(AnchorCounts(3, 3)) == (Decimal("0.3"), Decimal("1")),
-          f"{confidence_factors(AnchorCounts(3, 3))}")
 
     print("-- early_entry: one metric dropped (wallet B) ----------------------")
     early_b = early_entry_dimension(wallet_b(), CONFIG, AnchorCounts(3, 3))
@@ -227,12 +227,6 @@ def logic_checks() -> None:
     empty_c = early_entry_dimension({}, CONFIG, AnchorCounts(0, 0))
     check("no aggregates at all -> not_computable", empty_c.status == "not_computable",
           f"{empty_c.status}")
-    check("no anchor rows -> coverage 0.0, not 1.0",
-          confidence_factors(AnchorCounts(0, 0)) == (Decimal(0), Decimal(0)),
-          f"{confidence_factors(AnchorCounts(0, 0))}")
-    check("anchors with no computed metric -> coverage 0.0",
-          confidence_factors(AnchorCounts(0, 3)) == (Decimal(0), Decimal(0)),
-          f"{confidence_factors(AnchorCounts(0, 3))}")
     check("a not_computable aggregate is dropped like a not_rankable one",
           early_entry_dimension(
               {MR: agg(MR, None, status="not_computable", computed=0), PV: agg(PV, "0.5")},
@@ -282,83 +276,152 @@ def logic_checks() -> None:
           unbenchmarked.status == "not_rankable" and "no benchmark" in unbenchmarked.explanation,
           unbenchmarked.explanation)
 
-    print("-- confidence gate (Option 3) --------------------------------------")
-    gate_a = blend_confidence(Decimal(0), Decimal("0.9"), Decimal("1.0"), CONFIG)
-    check("today every wallet fails on existing_confidence = 0",
-          gate_a.confidence == Decimal(0) and gate_a.gate_passed is False, f"{gate_a}")
-    check("the note names the failing conjunct",
-          "existing_confidence below minimum" in gate_a.note, gate_a.note)
-    check("the note quotes both numbers", "(0.00 < 25.00)" in gate_a.note, gate_a.note)
-    check("components record all three inputs and all three thresholds",
-          set(gate_a.components) == {
-              "existing_confidence", "anchor_sample_size", "anchor_coverage",
-              "existing_confidence_min", "anchor_sample_size_min", "anchor_coverage_min",
-          },
-          f"{sorted(gate_a.components)}")
+    print("-- confidence composite and gate (sec 12) ----------------------------")
 
-    gate_pass = blend_confidence(Decimal(70), Decimal("0.9"), Decimal("1.0"), CONFIG)
-    check("A with existing confidence 70 passes every conjunct",
-          gate_pass.gate_passed is True and gate_pass.confidence == Decimal(70),
-          f"{gate_pass}")
-    check("a passing gate says so in words", gate_pass.note == "all thresholds met",
-          gate_pass.note)
+    class FactorConn:
+        """No-database connection answering exactly this module's factor queries."""
 
-    gate_b = blend_confidence(Decimal(70), Decimal("0.2"), Decimal("0.6667"), CONFIG)
-    check("B fails on the anchor sample, not on confidence",
-          gate_b.gate_passed is False and "anchor_sample_size below minimum" in gate_b.note,
-          gate_b.note)
-    check("the sample failure quotes 0.20 < 0.30", "(0.20 < 0.30)" in gate_b.note, gate_b.note)
+        def __init__(self, *, computed=0, total=0, trusted=0, entries=0, last=None,
+                     resolved=0, measured=0):
+            self.rows = {
+                QUERIES["coverage"]: (computed, total),
+                QUERIES["sample"]: (computed, total),
+                QUERIES["price_provenance"]: (trusted, entries),
+                QUERIES["recency"]: (last,),
+                QUERIES["metadata"]: (resolved, measured),
+                QUERIES["provenance_sell_only_pct"]: (0, entries),
+            }
 
-    gate_cov = blend_confidence(Decimal(70), Decimal("0.9"), Decimal("0.4"), CONFIG)
-    check("low coverage fails even with a good sample",
-          gate_cov.gate_passed is False and "anchor_coverage below minimum" in gate_cov.note,
-          gate_cov.note)
+        def execute(self, sql, params=()):
+            row = self.rows.get(sql)
 
-    check("the gate never modifies the confidence it was given",
-          (gate_a.confidence, gate_b.confidence, gate_cov.confidence)
-          == (Decimal(0), Decimal(70), Decimal(70)),
-          "gate must not blend")
+            class _Result:
+                def fetchone(self):
+                    return row
 
-    expect(ConsumerError,
-           lambda: blend_confidence(Decimal(0), Decimal(0), Decimal(0), {}),
+            return _Result()
+
+    # The design sec 6 2x2 factors: rich = 0.95/0.90/1.00/0.9223/0.95,
+    # thin = 0.50/0.75/0.40/0.8507/0.50.
+    rich_conn = FactorConn(computed=19, total=20, trusted=18, entries=20,
+                           last=AS_OF - dt.timedelta(days=7), resolved=19, measured=20)
+    thin_conn = FactorConn(computed=2, total=4, trusted=3, entries=4,
+                           last=AS_OF - dt.timedelta(days=14), resolved=2, measured=4)
+
+    rich = evaluate_gate(rich_conn, "GoodRich", as_of=AS_OF, config=CONFIG)
+    check("rich wallet composite is 94.33, exactly the design's arithmetic",
+          rich.composite_confidence == Decimal("94.33"), f"{rich.composite_confidence}")
+    check("rich wallet passes both conjuncts",
+          rich.gate_passed is True and rich.gate_reason == "all thresholds met",
+          rich.gate_reason)
+    check("19 >= 3, so the anchor conjunct is not the binding one",
+          rich.distinct_anchors == 19, f"{rich.distinct_anchors}")
+
+    thin = evaluate_gate(thin_conn, "GoodThin", as_of=AS_OF, config=CONFIG)
+    check("thin wallet composite is 59.51 (design sec 6 says 60.51 - see the report)",
+          thin.composite_confidence == Decimal("59.51"), f"{thin.composite_confidence}")
+    check("thin wallet fails on the anchor conjunct, not on confidence",
+          thin.gate_passed is False
+          and thin.gate_reason == "distinct_anchors below minimum (2 < 3)",
+          thin.gate_reason)
+    check("the thin composite is well above the 40 floor, so only anchors can stop it",
+          thin.composite_confidence > CONFIG["confidence_gate"]["confidence_min"])
+
+    check("golden pair: adjusted reproduces 80.19 / 29.25 from the design raws",
+          (confidence_adjusted_score(Decimal("82"), rich.composite_confidence),
+           confidence_adjusted_score(Decimal("28"), rich.composite_confidence))
+          == (Decimal("80.19"), Decimal("29.25")),
+          f"{confidence_adjusted_score(Decimal('82'), rich.composite_confidence)} / "
+          f"{confidence_adjusted_score(Decimal('28'), rich.composite_confidence)}")
+    check("thin pair: adjusted is 66.66 / 34.53 from the same formula",
+          (confidence_adjusted_score(Decimal("78"), thin.composite_confidence),
+           confidence_adjusted_score(Decimal("24"), thin.composite_confidence))
+          == (Decimal("66.66"), Decimal("34.53")))
+
+    import copy
+
+    strict = copy.deepcopy(CONFIG)
+    strict["confidence_gate"]["confidence_min"] = 95
+    check("confidence_min is read from config (95 rejects the 94.33 wallet)",
+          evaluate_gate(rich_conn, "W", as_of=AS_OF, config=strict).gate_passed is False)
+    strict2 = copy.deepcopy(CONFIG)
+    strict2["confidence_gate"]["min_distinct_anchors"] = 20
+    gate_strict = evaluate_gate(rich_conn, "W", as_of=AS_OF, config=strict2)
+    check("min_distinct_anchors is read from config (20 rejects 19 anchors)",
+          gate_strict.gate_passed is False
+          and gate_strict.gate_reason == "distinct_anchors below minimum (19 < 20)",
+          gate_strict.gate_reason)
+    five_conn = FactorConn(computed=5, total=5)
+    strict3 = copy.deepcopy(CONFIG)
+    strict3["confidence"]["sample_full_credit_at"] = 10
+    default_five = evaluate_gate(five_conn, "W", as_of=AS_OF, config=CONFIG)
+    softer = evaluate_gate(five_conn, "W", as_of=AS_OF, config=strict3)
+    check("sample_full_credit_at is read from config (5 anchors: 1.00 at 5, 0.50 at 10)",
+          (default_five.components["sample"], softer.components["sample"])
+          == (Decimal("1.0000"), Decimal("0.5000")),
+          f"{default_five.components['sample']} / {softer.components['sample']}")
+    check("changing the divisor moves the composite by its weight (50.00 -> 40.00)",
+          (default_five.composite_confidence, softer.composite_confidence)
+          == (Decimal("50.00"), Decimal("40.00")),
+          f"{default_five.composite_confidence} / {softer.composite_confidence}")
+
+    expect(ValueError,
+           lambda: evaluate_gate(rich_conn, "W", as_of=AS_OF, config={}),
            "a config without confidence_gate is rejected, not defaulted")
+    no_weights = copy.deepcopy(CONFIG)
+    no_weights["confidence"].pop("weight_recency")
+    expect(ValueError,
+           lambda: evaluate_gate(rich_conn, "W", as_of=AS_OF, config=no_weights),
+           "a config missing a weight is rejected, not guessed")
 
     # The gate must not even be consulted for a wallet that gets no scores row.
     import solscope.consumer as consumer_mod
 
     gate_calls: list = []
-    real_blend = consumer_mod.blend_confidence
+    real_gate = consumer_mod.evaluate_gate
 
     def _spy(*args, **kwargs):
         gate_calls.append(args)
-        return real_blend(*args, **kwargs)
+        return real_gate(*args, **kwargs)
 
-    consumer_mod.blend_confidence = _spy
+    consumer_mod.evaluate_gate = _spy
     try:
-        build_wallet_score("WalletC", wallet_c(), [], CONFIG, AnchorCounts(0, 3))
+        build_wallet_score(
+            FactorConn(computed=0, total=3), "WalletC", wallet_c(), [], CONFIG,
+            AnchorCounts(0, 3), as_of=AS_OF)
     finally:
-        consumer_mod.blend_confidence = real_blend
+        consumer_mod.evaluate_gate = real_gate
     check("a not_rankable wallet never reaches the gate", gate_calls == [], f"{gate_calls}")
 
     print("-- wallet assembly ------------------------------------------------")
-    scored = build_wallet_score("WalletA", wallet_a(), [], CONFIG, AnchorCounts(3, 3))
+    scored = build_wallet_score(
+        FactorConn(computed=3, total=3), "WalletA", wallet_a(), [], CONFIG,
+        AnchorCounts(3, 3), as_of=AS_OF)
     check("A is scored", scored is not None)
     if scored is not None:
         check("overall is the neutral 50.00 (five dimensions unbuilt)",
               scored.overall_score == Decimal("50.00"), f"{scored.overall_score}")
-        check("confidence is 0.00 because the blend is open",
-              scored.confidence_score == Decimal(0), f"{scored.confidence_score}")
+        # 0.30*1.00 coverage + 0.20*0.60 sample = 0.42; provenance, recency and
+        # metadata have no rows to read, and are 0.0 rather than dropped.
+        check("A's confidence is the composite 42.00, not a blend of dimensions",
+              scored.confidence_score == Decimal("42.00"), f"{scored.confidence_score}")
+        check("A clears the confidence floor on coverage and sample alone",
+              scored.gate.gate_passed is True, scored.gate.gate_reason)
+        check("adjusted is 50.00: partial overall with a passing gate",
+              scored.confidence_adjusted_score == Decimal("50.00"),
+              f"{scored.confidence_adjusted_score}")
         check("the row is excluded from ranking",
               (scored.band, scored.recommendation) == ("exclude", "exclude"),
               f"{scored.band}/{scored.recommendation}")
         check("gated_by names the missing dimensions",
               all(dim in scored.gated_by for dim in ("profitability", "integrity")),
               scored.gated_by)
-        check("gated_by records the confidence gate's reason",
-              "confidence_gate: existing_confidence below minimum" in scored.gated_by,
-              scored.gated_by)
+        check("a passing gate adds no confidence_gate reason",
+              "confidence_gate" not in scored.gated_by, scored.gated_by)
     check("C is not scored at all",
-          build_wallet_score("WalletC", wallet_c(), [], CONFIG, AnchorCounts(0, 3)) is None)
+          build_wallet_score(
+              FactorConn(computed=0, total=3), "WalletC", wallet_c(), [], CONFIG,
+              AnchorCounts(0, 3), as_of=AS_OF) is None)
     expect(ConsumerError,
            lambda: early_entry_dimension(wallet_a(), {"early_entry": {}}, AnchorCounts(3, 3)),
            "a scoring config missing weights is rejected, not guessed")
@@ -437,9 +500,47 @@ def seed_positions(conn) -> None:
     conn.commit()
 
 
+def seed_gate_wallet(conn) -> None:
+    """Wallet E: three anchors, resolved metadata, priced entries, no recent trade.
+
+    Every factor has an input except recency, which is 0.0 because no swap carries
+    an event_time - the "one factor missing" case. Composite 77.00:
+    0.30*1.00 coverage + 0.25*1.00 provenance + 0.20*0.60 sample + 0.10*1.00
+    metadata, with recency contributing nothing.
+    """
+    mints = [f"E-mint-{i}" for i in range(3)]
+    for mint in mints:
+        conn.execute(
+            "INSERT INTO tokens (mint, chain_id, metadata_json, metadata_completeness) "
+            "VALUES (%s,'solana','{}','complete')", (mint,))
+
+    # One priced entry with no event_time (provenance 1 of 2, recency 0), and one
+    # episode opened on a sell (no entry buy exists) so the D17 diagnostic is
+    # exercised: provenance is 0.50 and sell-only is 50%.
+    conn.execute(
+        "INSERT INTO transactions (signature, chain_id, slot, err) "
+        "VALUES ('sig-e-0','solana',900,false)")
+    conn.execute(
+        "INSERT INTO swaps (signature, instruction_index, slot, chain_id, trader, "
+        "  base_mint, quote_mint, side, base_amount_raw, quote_amount_raw, "
+        "  base_decimals, quote_decimals, exec_price_quote, price_provenance, "
+        "  fee_lamports, decoder_version, event_time) "
+        "VALUES ('sig-e-0',0,900,'solana','WalletE',%s,"
+        "  'So11111111111111111111111111111111111111112','buy',1000000,100000000,"
+        "  6,9,100,'swap_derived',1000,'phase2/1',NULL)", (mints[0],))
+    conn.execute(
+        "INSERT INTO positions (address, chain_id, mint, opened_at, opened_slot, "
+        "  entry_swap_signature) VALUES ('WalletE','solana',%s,%s,900,'sig-e-0')",
+        (mints[0], AS_OF - dt.timedelta(days=10)))
+    conn.execute(
+        "INSERT INTO positions (address, chain_id, mint, opened_at, opened_slot) "
+        "VALUES ('WalletE','solana',%s,%s,901)",
+        (mints[1], AS_OF - dt.timedelta(days=9)))
+
+
 def db_checks() -> bool:
     if psycopg is None:
-        print("\nSKIP: psycopg not installed — database checks skipped")
+        print("\nSKIP: psycopg not installed - database checks skipped")
         return False
     target = db_target()
     if target is None:
@@ -536,18 +637,21 @@ def db_checks() -> bool:
         seed_anchor_metrics(conn, "WalletB", "B", 3, {MR: 3, BR: 1, PV: 3})
         seed_anchor_metrics(conn, "WalletC", "C", 1, {MR: 0, BR: 0, PV: 0})
         seed_anchor_metrics(conn, "WalletD", "D", 3, {MR: 3, BR: 3, PV: 3})
+        store(conn, "WalletE", [4, 4, 4], [0.02, 0.02, 0.02], [0.5, 0.5, 0.5])
+        seed_anchor_metrics(conn, "WalletE", "E", 3, {MR: 3, BR: 3, PV: 3})
         seed_positions(conn)
+        seed_gate_wallet(conn)
 
         report = run_consumer(
             conn, rule_version=RULE, as_of=AS_OF, window_start=WINDOW_START, window_end=AS_OF
         )
-        check("four wallets seen, three scored", (report.wallets_seen, report.wallets_scored) == (4, 3),
+        check("five wallets seen, four scored", (report.wallets_seen, report.wallets_scored) == (5, 4),
               f"{report.wallets_seen}/{report.wallets_scored}")
         check("wallet C is skipped with its reason",
               report.skipped.get("WalletC") == "early_entry_not_rankable", f"{report.skipped}")
-        check("three scores rows", count(conn, "scores") == 3,
+        check("four scores rows", count(conn, "scores") == 4,
               f"{count(conn, 'scores')}")
-        check("nine sub-scores rows (3 per scored wallet)", count(conn, "sub_scores") == 9,
+        check("twelve sub-scores rows (3 per scored wallet)", count(conn, "sub_scores") == 12,
               f"{count(conn, 'sub_scores')}")
         check("the run records the scoring config version",
               report.config_version == str(CONFIG["version"]), report.config_version)
@@ -555,7 +659,7 @@ def db_checks() -> bool:
               conn.execute(
                   "SELECT experiment_label, wallets_scored FROM score_runs WHERE score_run_id=%s",
                   (report.score_run_id,),
-              ).fetchone() == (f"aggregate_rule:{RULE}", 3),
+              ).fetchone() == (f"aggregate_rule:{RULE}", 4),
               "label/wallets_scored mismatch")
         check("score_config_versions records the weights used",
               count(conn, "score_config_versions", "config_version=%s", (report.config_version,))
@@ -566,9 +670,14 @@ def db_checks() -> bool:
             "FROM scores s WHERE s.address='WalletA'"
         ).fetchone()
         check("A's row is neutral, excluded and explained",
-              close(a[1], "50") and close(a[2], "0") and a[3] == "exclude"
+              close(a[1], "50") and a[3] == "exclude"
               and "incomplete_score" in a[4],
               f"{a}")
+        # 0.30*coverage(3/3) + 0.20*sample(min(1,3/5)) = 0.42; no positions, no
+        # swaps, no tokens, so provenance/recency/metadata are 0.0 and are not
+        # re-normalised away.
+        check("A's stored confidence_score is the composite 42.00, not 0.00",
+              close(a[2], "42"), f"{a[2]}")
 
         early_a = conn.execute(
             "SELECT raw_value, normalized_value, shrunk_value, weight, sample_size, "
@@ -581,8 +690,13 @@ def db_checks() -> bool:
               close(early_a[3], "0.25"), f"{early_a[3]}")
         check("a 3-anchor wallet measured on 3 metrics stores sample_size 3, not 9",
               early_a[4] == 3 and close(early_a[5], "0.375", "1e-4"), f"{early_a}")
-        check("A's early_entry confidence column is left NULL (blend open)",
+        check("early_entry carries no confidence of its own",
               early_a[6] is None, f"{early_a[6]}")
+        check("the confidence dimension row stores the composite 42.00",
+              close(conn.execute(
+                  "SELECT confidence FROM sub_scores WHERE score_id=%s "
+                  "AND dimension='confidence'", (a[0],)).fetchone()[0], "42"),
+              "confidence sub-score not stored")
 
         early_b = conn.execute(
             "SELECT raw_value, shrunk_value FROM sub_scores "
@@ -609,7 +723,8 @@ def db_checks() -> bool:
             row[0]
             for row in conn.execute(
                 "SELECT note FROM score_evidence WHERE dimension='early_entry' AND score_id="
-                "(SELECT id FROM scores WHERE address='WalletB')"
+                "(SELECT id FROM scores WHERE address='WalletB') "
+                "AND subject_id <> 'provenance_sell_only_pct'"
             ).fetchall()
         ]
         b_weights = [Decimal(note.split("weight_used=")[1]) for note in b_notes]
@@ -634,15 +749,56 @@ def db_checks() -> bool:
                 (a[0],),
             ).fetchall()
         )
-        check("anchor_sample_size is stored as evidence (0.3 = 3 anchors / 10)",
-              close(factors.get("anchor_sample_size"), "0.3"), f"{factors}")
-        check("anchor_coverage is stored as evidence (1.0)",
-              close(factors.get("anchor_coverage"), "1.0"), f"{factors}")
-        check("the confidence sub-score explains that the blend is open",
-              "not blended" in conn.execute(
+        check("all five factors are stored as evidence",
+              {"factor.coverage", "factor.price_provenance", "factor.sample",
+               "factor.recency", "factor.metadata"} <= set(factors),
+              f"{sorted(factors)}")
+        check("A's coverage factor is 1.0 and its sample factor 0.60 (3 anchors of 5)",
+              close(factors.get("factor.coverage"), "1") and close(factors.get("factor.sample"), "0.6"),
+              f"{factors}")
+        check("A's missing inputs are stored as 0.0, not dropped",
+              close(factors.get("factor.price_provenance"), "0")
+              and close(factors.get("factor.recency"), "0")
+              and close(factors.get("factor.metadata"), "0"),
+              f"{factors}")
+        check("the composite and both thresholds are stored as evidence",
+              close(factors.get("confidence_composite"), "42")
+              and close(factors.get("threshold.confidence_min"), "40")
+              and close(factors.get("threshold.min_distinct_anchors"), "3"),
+              f"{factors}")
+        check("the confidence sub-score explains the composite and the gate",
+              "100 x sum(weight x factor)" in conn.execute(
                   "SELECT explanation FROM sub_scores WHERE score_id=%s AND dimension='confidence'",
                   (a[0],),
               ).fetchone()[0])
+
+        e = conn.execute(
+            "SELECT id, confidence_score FROM scores WHERE address='WalletE'"
+        ).fetchone()
+        # 0.30*1.00 + 0.25*0.50 + 0.20*0.60 + 0.15*0.00 + 0.10*1.00 = 0.645
+        check("E's composite is 64.50: one factor missing degrades, not disappears",
+              close(e[1], "64.5"), f"{e[1]}")
+        e_factors = dict(
+            conn.execute(
+                "SELECT subject_id, value FROM score_evidence "
+                "WHERE score_id=%s AND dimension='confidence'", (e[0],),
+            ).fetchall()
+        )
+        check("E's recency is the missing factor and is 0.0",
+              close(e_factors.get("factor.recency"), "0"), f"{e_factors}")
+        check("E's provenance is 0.50 (one of two entries has an entry buy)",
+              close(e_factors.get("factor.price_provenance"), "0.5"), f"{e_factors}")
+        e_sell = conn.execute(
+            "SELECT subject_id, value, note FROM score_evidence "
+            "WHERE score_id=%s AND dimension='early_entry' "
+            "AND subject_id='provenance_sell_only_pct'", (e[0],)).fetchone()
+        check("D17: sell-only percentage is stored under early_entry",
+              e_sell is not None and close(e_sell[1], "50"), f"{e_sell}")
+        check("D17: its note distinguishes routing from an unobserved history",
+              e_sell is not None and "predates observation" in e_sell[2],
+              f"{e_sell}")
+        print(f"  note  score_evidence sample: dimension=early_entry "
+              f"subject_id={e_sell[0]} value={e_sell[1]}")
 
         counts_before = (
             count(conn, "scores"),
@@ -675,10 +831,10 @@ def db_checks() -> bool:
         )
         b_rows = count(conn, "scores", "address='WalletB'")
         check("a wallet that lost its aggregates is pruned from the run",
-              third.wallets_scored == 2 and b_rows == 0,
+              third.wallets_scored == 3 and b_rows == 0,
               f"scored={third.wallets_scored} b_rows={b_rows}")
         check("pruning leaves the other wallets intact",
-              count(conn, "scores") == 2, f"{count(conn, 'scores')}")
+              count(conn, "scores") == 3, f"{count(conn, 'scores')}")
 
     return True
 

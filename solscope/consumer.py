@@ -66,18 +66,24 @@ observations.  ``anchor_coverage`` uses the same denominator: distinct computed
 anchors / distinct anchors.  Neither is available from ``wallet_aggregates``, which
 stores per-metric counts only.
 
-Confidence: gated, **not blended**
-----------------------------------
-``anchor_sample_size = min(1, computed_anchors / 10)`` and
-``anchor_coverage = computed / total`` are computed per wallet and stored as
-evidence.  They are not blended into ``confidence_score`` — the blend formula is
-open — but they are **gated** on, per the Option 3 decision: a wallet ranks only if
-``existing_confidence >= existing_min`` AND ``anchor_sample_size >= sample_min`` AND
-``anchor_coverage >= coverage_min``, all three read from ``scoring.yaml`` under
-``confidence_gate``.  ``existing_confidence`` is 0.00 until §12's five components
-exist, so today **no wallet ranks**: the pipeline computes scores and stores
-evidence, and the gate excludes everything because the confidence it needs does not
-exist yet.  That is intentional, not a bug.
+Confidence: the §12 composite, then the gate
+-------------------------------------------
+``scores.confidence_score`` is now the five-factor composite from
+``solscope.confidence`` (doc §12, S12b):
+
+    confidence = 100 x (0.30*coverage + 0.25*price_provenance + 0.20*sample
+                        + 0.15*recency + 0.10*metadata)
+
+All five factors are computed for every scored wallet and stored as evidence; a
+missing input contributes 0.0 and the other weights are **not** re-normalised.
+The gate is ``composite >= confidence_gate.confidence_min`` AND
+``distinct_computed_anchors >= confidence_gate.min_distinct_anchors`` (both from
+``scoring.yaml``).  Option 3's ``blend_confidence`` — which gated on a
+``confidence`` that was always 0.00 and therefore excluded every wallet — is
+retired, along with its three config keys.
+
+Band derivation is S12c. Until then every row keeps ``band='exclude'`` with a
+``gated_by`` that names the reason, so no wallet is ranked on a partial score.
 
 Why ``overall_score`` is neutral
 --------------------------------
@@ -96,22 +102,25 @@ from dataclasses import dataclass, field
 from decimal import ROUND_HALF_EVEN, Decimal
 from typing import Any, Mapping, Sequence
 
+from .confidence import (
+    GateResult,
+    confidence_adjusted_score,
+    evaluate_gate,
+    sell_only_pct,
+)
 from .config import CONFIG_DIR, ConfigError, load_scoring
 
 __all__ = [
     "EARLY_ENTRY_METRICS",
     "PIPELINE_VERSION",
     "AnchorCounts",
-    "BlendResult",
     "ConsumerError",
     "ConsumerReport",
     "DimensionScore",
     "StoredAggregate",
     "WalletScore",
-    "blend_confidence",
     "build_wallet_score",
     "cohort_excess_component",
-    "confidence_factors",
     "credit_for",
     "early_entry_dimension",
     "excess_for",
@@ -156,11 +165,6 @@ UNBUILT_DIMENSIONS: tuple[str, ...] = (
 #: the same logic as ``confidence_adjusted_score``: absent evidence neither
 #: rewards nor punishes.
 PARTIAL_OVERALL_SCORE = Decimal("50.00")
-
-#: Anchors needed for full credit on ``anchor_sample_size``. Mirrors the decision
-#: recorded in docs/PHASE1B_SCOPING.md § Q4; there is no scoring.yaml key for it,
-#: and this phase does not edit the config.
-ANCHOR_SAMPLE_FULL_CREDIT = Decimal(10)
 
 #: Benchmark metric key and kind used for token selection (§9 of doc 05).
 COHORT_METRIC_KEY = "max_multiple_30d"
@@ -242,21 +246,6 @@ class AnchorCounts:
 
 
 @dataclass(frozen=True)
-class BlendResult:
-    """The confidence gate's verdict for one wallet.
-
-    ``confidence`` is the existing confidence, unmodified: the two new factors gate
-    ranking, they do not invent a blended number.  ``note`` names the first failing
-    conjunct, so ``gated_by`` can say why a wallet was excluded in words.
-    """
-
-    confidence: Decimal
-    gate_passed: bool
-    components: dict[str, Decimal]
-    note: str
-
-
-@dataclass(frozen=True)
 class Component:
     """One metric's contribution to a dimension, before and after re-weighting."""
 
@@ -282,6 +271,9 @@ class DimensionScore:
     explanation: str
     anchor_count_computed: int = 0
     anchor_count_excluded: int = 0
+    #: The §12 composite, carried by the ``confidence`` dimension row only.
+    #: ``None`` for dimensions whose confidence is not a separate number.
+    confidence: Decimal | None = None
 
     @property
     def is_computed(self) -> bool:
@@ -307,7 +299,7 @@ class WalletScore:
     band: str
     recommendation: str
     gated_by: str
-    confidence_blend: BlendResult
+    gate: GateResult
 
 
 @dataclass
@@ -532,85 +524,6 @@ def early_entry_dimension(
     )
 
 
-def confidence_factors(anchors: AnchorCounts) -> tuple[Decimal, Decimal]:
-    """``(anchor_sample_size, anchor_coverage)`` from distinct anchor counts.
-
-    ``anchor_sample_size = min(1, computed_anchors / 10)``;
-    ``anchor_coverage = computed / total``, and 0.0 when the wallet has no anchor
-    rows at all — no coverage, not full coverage.  Both denominators are anchors, so
-    a wallet measured on three metrics by the same three anchors is 3/10, not 9/10.
-    """
-    computed = max(0, int(anchors.computed))
-    total = max(0, int(anchors.total))
-    sample = min(_ONE, Decimal(computed) / ANCHOR_SAMPLE_FULL_CREDIT)
-    coverage = Decimal(computed) / Decimal(total) if total else Decimal(0)
-    return _q4(sample), _q4(coverage)
-
-
-def _gate_thresholds(config: Mapping[str, Any]) -> dict[str, Decimal]:
-    """Read the Option 3 gate thresholds; never fall back to a hardcoded default."""
-    section = config.get("confidence_gate")
-    if not isinstance(section, Mapping):
-        raise ConsumerError("scoring.yaml: missing 'confidence_gate' thresholds")
-    thresholds: dict[str, Decimal] = {}
-    for key in ("existing_min", "sample_min", "coverage_min"):
-        if key not in section:
-            raise ConsumerError(f"scoring.yaml: missing confidence_gate.{key}")
-        thresholds[key] = _dec(section[key])
-    return thresholds
-
-
-def blend_confidence(
-    existing_confidence: Decimal,
-    anchor_sample_size: Decimal,
-    anchor_coverage: Decimal,
-    config: Mapping[str, Any],
-) -> BlendResult:
-    """Gate on the three confidence inputs; never compute a blended number.
-
-    Option 3 of the blend review: the two anchor factors do not contribute to
-    ``confidence`` (that would invent a number whose dominant input does not exist),
-    they decide whether the existing confidence is trustworthy enough to rank at all.
-
-    ``existing_confidence >= existing_min  AND  anchor_sample_size >= sample_min
-    AND  anchor_coverage >= coverage_min``
-
-    Until §12's five confidence components are implemented, ``existing_confidence`` is
-    0.00 for every wallet, so ``gate_passed`` is False for every wallet and nothing
-    ranks.  That is the honest output of "the confidence this gate needs does not
-    exist yet", and it is reported rather than papered over.
-    """
-    thresholds = _gate_thresholds(config)
-    existing = _dec(existing_confidence)
-    sample = _dec(anchor_sample_size)
-    coverage = _dec(anchor_coverage)
-
-    checks = (
-        ("existing_confidence", existing, thresholds["existing_min"]),
-        ("anchor_sample_size", sample, thresholds["sample_min"]),
-        ("anchor_coverage", coverage, thresholds["coverage_min"]),
-    )
-    components: dict[str, Decimal] = {name: value for name, value, _ in checks}
-    components.update(
-        {f"{name}_min": minimum for name, _, minimum in checks}
-    )
-
-    for name, value, minimum in checks:
-        if value < minimum:
-            return BlendResult(
-                confidence=existing,
-                gate_passed=False,
-                components=components,
-                note=f"{name} below minimum ({_q2(value)} < {_q2(minimum)})",
-            )
-    return BlendResult(
-        confidence=existing,
-        gate_passed=True,
-        components=components,
-        note="all thresholds met",
-    )
-
-
 def launch_week_key(when: _dt.datetime) -> str:
     """``launch_week:YYYY-Www`` for a launch instant, in ISO weeks.
 
@@ -737,50 +650,55 @@ def token_selection_dimension(
 
 
 def build_wallet_score(
+    conn,
     wallet: str,
     aggregates: Mapping[str, StoredAggregate],
     excesses: Sequence[PositionExcess],
     config: Mapping[str, Any],
     anchors: AnchorCounts,
+    *,
+    as_of: _dt.datetime,
 ) -> WalletScore | None:
     """Assemble one wallet's scores row, or ``None`` when it must not be scored.
 
     A wallet with no computable ``early_entry`` gets no ``scores`` row at all: this
     phase's claim is the early-entry sub-score, and a row carrying only
     ``token_selection`` would put a wallet into the scores table on the strength of
-    a dimension that is not this phase's subject — so ``blend_confidence`` is never
-    consulted for it.
+    a dimension that is not this phase's subject — so the confidence gate is never
+    consulted for it, and no confidence number is invented for it.
+
+    ``confidence_score`` is the §12 composite (``evaluate_gate``), not a blend of
+    the existing dimensions: confidence answers "how much evidence", the score
+    answers "how good", and Option 3's attempt to gate on a confidence that did not
+    exist yet is retired.
     """
     early = early_entry_dimension(aggregates, config, anchors)
     if not early.is_computed:
         return None
     token = token_selection_dimension(excesses, config)
-    sample, coverage = confidence_factors(anchors)
-    blend = blend_confidence(Decimal(0), sample, coverage, config)
+    gate = evaluate_gate(conn, wallet, as_of=as_of, config=config)
 
-    confidence = blend.confidence
+    confidence = gate.composite_confidence
     overall = PARTIAL_OVERALL_SCORE
-    adjusted = (
-        Decimal(50) + (overall - Decimal(50)) * (confidence / _HUNDRED)
-    ).quantize(_TWO_DP, rounding=ROUND_HALF_EVEN)
+    adjusted = confidence_adjusted_score(overall, confidence)
 
     gates: list[str] = []
-    if not blend.gate_passed:
-        gates.append(f"confidence_gate: {blend.note}")
+    if not gate.gate_passed:
+        gates.append(f"confidence_gate: {gate.gate_reason}")
     gates.append("incomplete_score: missing_dimensions=" + ",".join(UNBUILT_DIMENSIONS))
     return WalletScore(
         wallet=wallet,
         early_entry=early,
         token_selection=token,
-        anchor_sample_size=sample,
-        anchor_coverage=coverage,
+        anchor_sample_size=gate.components["sample"],
+        anchor_coverage=gate.components["coverage"],
         overall_score=overall,
         confidence_score=confidence,
         confidence_adjusted_score=adjusted,
         band="exclude",
         recommendation="exclude",
         gated_by=";".join(gates),
-        confidence_blend=blend,
+        gate=gate,
     )
 
 
@@ -1053,7 +971,7 @@ def _write_sub_score(conn, score_id: int, dimension: DimensionScore) -> None:
             contribution,
             dimension.sample_size or None,
             dimension.shrinkage_applied,
-            None,  # confidence blend is open; see the module docstring
+            dimension.confidence,
             dimension.explanation,
         ),
     )
@@ -1083,18 +1001,52 @@ def _write_evidence(conn, score_id: int, wallet_score: WalletScore) -> None:
                 ),
             )
 
-    for subject, value, note in (
-        (
-            "anchor_sample_size",
-            wallet_score.anchor_sample_size,
-            "min(1, computed_anchors/10); stored, not yet blended into confidence",
-        ),
-        (
-            "anchor_coverage",
-            wallet_score.anchor_coverage,
-            "computed/(computed+excluded); stored, not yet blended into confidence",
-        ),
-    ):
+    # D17: the provenance factor is a number; this says what kind of gap produced
+    # it. A sell-opened position has no entry buy, so provenance gives it no credit
+    # either way — the percentage separates "this wallet routes badly" from "our
+    # history starts after it already held the token".
+    conn.execute(
+        """
+        INSERT INTO score_evidence (
+            score_id, dimension, evidence_kind, subject_id, value, note
+        )
+        VALUES (%s, %s, 'metric', %s, %s, %s)
+        """,
+        (score_id, DIM_EARLY_ENTRY, "provenance_sell_only_pct",
+         sell_only_pct(conn, wallet_score.wallet),
+         "share of positions opened by a sell, with no entry buy to price; "
+         "provenance scores them 0 by design, so a high value means the history "
+         "predates observation rather than bad routing"),
+    )
+
+    gate = wallet_score.gate
+    for factor, value in gate.components.items():
+        conn.execute(
+            """
+            INSERT INTO score_evidence (
+                score_id, dimension, evidence_kind, subject_id, value,
+                benchmark_value, note
+            )
+            VALUES (%s, %s, 'metric', %s, %s, %s, %s)
+            """,
+            (score_id, DIM_CONFIDENCE, f"factor.{factor}", value,
+             gate.weights[factor],
+             f"weight={gate.weights[factor]}; evidence-only input (no performance "
+             f"column is read)"),
+        )
+    conn.execute(
+        """
+        INSERT INTO score_evidence (
+            score_id, dimension, evidence_kind, subject_id, value, note
+        )
+        VALUES (%s, %s, 'metric', %s, %s, %s)
+        """,
+        (score_id, DIM_CONFIDENCE, "confidence_composite",
+         gate.composite_confidence,
+         f"100 x sum(weight x factor); distinct_anchors={gate.distinct_anchors}; "
+         f"gate {'passed' if gate.gate_passed else 'failed'}: {gate.gate_reason}"),
+    )
+    for key, value in gate.thresholds.items():
         conn.execute(
             """
             INSERT INTO score_evidence (
@@ -1102,18 +1054,18 @@ def _write_evidence(conn, score_id: int, wallet_score: WalletScore) -> None:
             )
             VALUES (%s, %s, 'metric', %s, %s, %s)
             """,
-            (score_id, DIM_CONFIDENCE, subject, value, note),
+            (score_id, DIM_CONFIDENCE, f"threshold.{key}", value,
+             "confidence_gate threshold applied to this wallet"),
         )
 
 
 def _confidence_explanation(wallet_score: WalletScore) -> str:
-    blend = wallet_score.confidence_blend
-    verdict = "passed" if blend.gate_passed else "failed"
+    gate = wallet_score.gate
+    factors = ", ".join(f"{name}={value}" for name, value in gate.components.items())
     return (
-        f"confidence not blended (open decision); gate {verdict}: {blend.note}; "
-        f"anchor_sample_size={wallet_score.anchor_sample_size} "
-        f"anchor_coverage={wallet_score.anchor_coverage}; "
-        "stored as score_evidence rows so a future turn can blend without re-computing"
+        f"confidence {gate.composite_confidence} = 100 x sum(weight x factor): "
+        f"{factors}; distinct_anchors={gate.distinct_anchors}; "
+        f"gate {'passed' if gate.gate_passed else 'failed'}: {gate.gate_reason}"
     )
 
 
@@ -1173,6 +1125,7 @@ def write_wallet_score(
                 shrinkage_applied=Decimal(0),
                 components=(),
                 explanation=_confidence_explanation(wallet_score),
+                confidence=wallet_score.confidence_score,
             ),
         )
         _write_evidence(conn, score_id, wallet_score)
@@ -1256,7 +1209,8 @@ def run_consumer(
     for wallet in sorted(aggregates):
         anchors = anchor_counts.get(wallet, AnchorCounts(0, 0))
         excesses = load_position_excesses(conn, wallet, as_of, config)
-        wallet_score = build_wallet_score(wallet, aggregates[wallet], excesses, config, anchors)
+        wallet_score = build_wallet_score(conn, wallet, aggregates[wallet], excesses,
+                                          config, anchors, as_of=as_of)
         if wallet_score is None:
             early = early_entry_dimension(aggregates[wallet], config, anchors)
             report.skipped[wallet] = f"early_entry_{early.status}"
