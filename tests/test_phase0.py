@@ -115,9 +115,9 @@ def test_cli_parser():
     # Live commands plus every roadmap stub. 'ingest' graduated from stub to
     # live command in Phase 1; the surface itself must stay complete.
     # Live handlers by phase: 0 (migrate/doctor/budget), 1 (ingest), 2 (derive),
-    # 3 (positions).
+    # 3 (positions), 1b (consumer/scores).
     expected = {"migrate", "doctor", "budget", "ingest", "derive",
-                "positions"} | set(STUB_COMMANDS)
+                "positions", "consumer", "scores"} | set(STUB_COMMANDS)
     actions = [a for a in parser._subparsers._group_actions if hasattr(a, "choices")]
     registered = set(actions[0].choices) if actions else set()
     check("every documented subcommand registered", registered == expected,
@@ -257,8 +257,87 @@ def test_migrations_discoverable():
     check("001_init.sql present", any(m.path.name == "001_init.sql" for m in migs))
 
 
+def test_consumer_cli():
+    print("\n[consumer CLI]")
+    import argparse as _argparse
+    import contextlib
+    import io
+    import unittest.mock as mock
+
+    from solscope import cli as cli_mod
+    from solscope.cli import Ctx, _HANDLERS, build_parser
+    from solscope.consumer import ConsumerReport
+
+    parser = build_parser()
+    args = parser.parse_args(["consumer", "--rule-version", "v1",
+                              "--as-of", "2026-11-07T00:00:00+00:00", "--dry-run"])
+    check("consumer parses --rule-version/--as-of/--dry-run",
+          (args.command, args.rule_version, args.dry_run) == ("consumer", "v1", True),
+          repr(args))
+    check("consumer is a live handler, not a roadmap stub",
+          _HANDLERS["consumer"] is cli_mod._cmd_consumer,
+          getattr(_HANDLERS["consumer"], "__name__", "?"))
+
+    class _AggConn:
+        """Just enough connection for the rule-version default lookup."""
+
+        def __init__(self):
+            self.closed = False
+
+        def execute(self, sql, params=()):
+            if "wallet_aggregates" not in sql:
+                raise AssertionError(f"unexpected SQL: {' '.join(sql.split())[:60]}")
+            return FakeCursor([("v1",)])
+
+        def close(self):
+            self.closed = True
+
+    conn = _AggConn()
+    seen: dict[str, object] = {}
+    instant = _dt.datetime(2026, 11, 7, tzinfo=_dt.timezone.utc)
+
+    def fake_run(connection, *, rule_version, as_of=None, dry_run=False, **_kw):
+        seen.update(rule_version=rule_version, dry_run=dry_run, as_of=as_of)
+        return ConsumerReport(
+            rule_version=rule_version,
+            config_version="cfg-test",
+            as_of=as_of,
+            window_start=as_of,
+            window_end=as_of,
+            wallets_seen=3,
+            wallets_scored=2,
+            skipped={"W3": "early_entry_not_rankable"},
+            bands={"watch": 1, "exclude": 1},
+        )
+
+    ctx = Ctx(budget=load_budget(), dsn="host=example", verbose=False)
+    out = io.StringIO()
+    with mock.patch.object(cli_mod, "connect", lambda _dsn: conn), \
+         mock.patch("solscope.consumer.run_consumer", fake_run), \
+         contextlib.redirect_stdout(out):
+        rc = cli_mod._cmd_consumer(ctx, _argparse.Namespace(
+            rule_version=None, as_of=instant, dry_run=True))
+    text = out.getvalue()
+
+    check("consumer --dry-run exits 0", rc == 0, text)
+    check("it defaults the rule version from wallet_aggregates",
+          seen.get("rule_version") == "v1", repr(seen))
+    check("--dry-run is passed through, not swallowed",
+          seen.get("dry_run") is True, repr(seen))
+    check("the connection is closed, not leaked", conn.closed)
+    check("the summary prints counts, gated-out reasons and the band split",
+          all(token in text for token in
+              ("wallets seen   3", "scored         2", "gated out      1",
+               "early_entry_not_rankable 1", "watch 1", "exclude 1")),
+          text)
+    check("every band is listed, so a zero is visible",
+          all(name in text for name in ("track", "investigate", "promising_thin")),
+          text)
+
+
 def main() -> int:
     test_cli_parser()
+    test_consumer_cli()
     test_budget_config()
     test_ledger_cap_fails_loudly()
     test_ledger_idempotency()

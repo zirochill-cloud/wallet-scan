@@ -320,6 +320,9 @@ class ConsumerReport:
     wallets_seen: int = 0
     wallets_scored: int = 0
     skipped: dict[str, str] = field(default_factory=dict)
+    # Band name -> wallet count for the scores this run built. Computed even on a
+    # dry run, because a dry run's whole purpose is to show what would be written.
+    bands: dict[str, int] = field(default_factory=dict)
 
     @property
     def wallets_skipped(self) -> int:
@@ -1240,6 +1243,8 @@ def run_consumer(
         prepared.append(wallet_score)
 
     report.wallets_scored = len(prepared)
+    for wallet_score in prepared:
+        report.bands[wallet_score.band] = report.bands.get(wallet_score.band, 0) + 1
     if dry_run:
         return report
 

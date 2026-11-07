@@ -9,13 +9,16 @@ those to later phases. What is real now:
   * ``solscope doctor``   — verifies config parses and the budget is sane
   * ``solscope budget``   — prints current spend vs the monthly cap
 
-The rest (``discover ingest derive score report watch validate``) exist so the
-surface is stable and later phases drop into a command that already parses.
+Phase 1b adds ``consumer`` (aggregates to scores to bands) and ``scores``
+(read them back). The rest (``discover ingest derive score report watch
+validate``) exist so the surface is stable and later phases drop into a command
+that already parses.
 """
 from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import os
 import sys
 from dataclasses import dataclass
 from typing import Callable
@@ -310,6 +313,79 @@ def _cmd_positions(ctx: Ctx, args: argparse.Namespace) -> int:
         conn.close()
 
 
+def _latest_aggregate_rule(conn) -> str | None:
+    """The aggregate rule version the consumer would pick if none is named.
+
+    ``wallet_aggregates`` is keyed by ``rule_version`` on purpose: numbers
+    produced under different rules are not comparable. The newest version by
+    ``computed_at`` is what a fresh aggregation run just wrote, so that is the
+    sane default for a bare ``solscope consumer``.
+    """
+    row = conn.execute(
+        """
+        SELECT rule_version
+        FROM wallet_aggregates
+        GROUP BY rule_version
+        ORDER BY max(computed_at) DESC, rule_version DESC
+        LIMIT 1
+        """
+    ).fetchone()
+    return row[0] if row else None
+
+
+def _format_consumer_report(report, dry_run: bool) -> str:
+    """One screen: what the run touched, what it gated out, how bands split."""
+    mode = "dry run (nothing persisted)" if dry_run else f"persisted, run {report.score_run_id}"
+    lines = [
+        f"consumer run: rule_version={report.rule_version}",
+        f"  as of          {report.as_of.isoformat()}",
+        f"  window         {report.window_start.date()} .. {report.window_end.date()}",
+        f"  mode           {mode}",
+        f"  wallets seen   {report.wallets_seen}",
+        f"  scored         {report.wallets_scored}",
+        f"  gated out      {report.wallets_skipped}",
+    ]
+    if report.skipped:
+        counts: dict[str, int] = {}
+        for reason in report.skipped.values():
+            counts[reason] = counts.get(reason, 0) + 1
+        lines.append("  skip reasons   " + ", ".join(
+            f"{reason} {count}" for reason, count in sorted(counts.items())))
+    if report.bands:
+        lines.append("  bands          " + ", ".join(
+            f"{name} {report.bands.get(name, 0)}" for name in BAND_NAMES))
+    else:
+        lines.append("  bands          (none — no wallet has an early-entry score)")
+    return "\n".join(lines)
+
+
+def _cmd_consumer(ctx: Ctx, args: argparse.Namespace) -> int:
+    """Phase 1b — run the scoring consumer: aggregates to scores to bands."""
+    from .consumer import run_consumer
+
+    if ctx.dsn is None:
+        print("error: consumer needs SOLSCOPE_PGDSN", file=sys.stderr)
+        return 1
+    conn = connect(ctx.dsn)
+    try:
+        rule_version = args.rule_version or _latest_aggregate_rule(conn)
+        if not rule_version:
+            print("error: no wallet_aggregates rows — nothing to score. Seed the "
+                  "anchor tables first (see data/seed_anchors.md).", file=sys.stderr)
+            return 1
+        report = run_consumer(
+            conn,
+            rule_version=rule_version,
+            as_of=args.as_of,
+            dry_run=args.dry_run,
+        )
+    finally:
+        conn.close()
+
+    print(_format_consumer_report(report, args.dry_run))
+    return 0
+
+
 def _parse_instant(value: str) -> _dt.datetime:
     """ISO-8601 instant; a naive value is read as UTC, never as local time."""
     try:
@@ -411,6 +487,16 @@ def build_parser() -> argparse.ArgumentParser:
     scores.add_argument("--as-of", type=_parse_instant, default=None,
                         help="only rows computed at or before this instant (ISO-8601)")
 
+    consume = sub.add_parser("consumer",
+                             help="Phase 1b — score stored aggregates into bands")
+    consume.add_argument("--rule-version", default=None,
+                         help="aggregate rule version to score (default: the newest "
+                              "one present in wallet_aggregates)")
+    consume.add_argument("--as-of", type=_parse_instant, default=None,
+                         help="instant the run is stamped with (ISO-8601; default now)")
+    consume.add_argument("--dry-run", action="store_true",
+                         help="compute scores and bands, persist nothing")
+
     for name in STUB_COMMANDS:
         sub.add_parser(name, help=STUB_COMMANDS[name])
 
@@ -424,6 +510,7 @@ _HANDLERS: dict[str, Callable[[Ctx, argparse.Namespace], int]] = {
     "ingest": _cmd_ingest,
     "derive": _cmd_derive,
     "positions": _cmd_positions,
+    "consumer": _cmd_consumer,
     "scores": _cmd_scores,
     **{name: _cmd_stub(name) for name in STUB_COMMANDS},
 }
@@ -439,7 +526,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"config error: {exc}", file=sys.stderr)
         return 1
 
-    ctx = Ctx(budget=budget, dsn=args.dsn, verbose=args.verbose)
+    # --dsn's documented default is $SOLSCOPE_PGDSN; resolve it here so every
+    # handler sees one answer instead of each deciding whether to read the env.
+    ctx = Ctx(budget=budget, dsn=args.dsn or os.environ.get("SOLSCOPE_PGDSN"),
+              verbose=args.verbose)
 
     try:
         return _HANDLERS[args.command](ctx, args)

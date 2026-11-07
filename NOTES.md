@@ -232,6 +232,25 @@ every fixture from the implementation, not from a mental formula — applies to 
 symmetrically to agent fixtures. When a user instruction contains hand-computed values, derive
 them from code before acting.
 
+**2026-11-07: "No new capability" was scoped too broadly.** The instruction was meant to prevent
+speculative Phase 5 / S1–S3 work on top of unverified anchor input. It was applied by the agent to
+a CLI wrapper around an already-tested function (`run_consumer`), so the closeout shipped with a
+documented command that does not exist, and the runnable end-to-end path slipped by one turn. The
+distinction: **new capability** = new modules, new external calls, new schema, new behaviour.
+**Access to existing capability** = CLI registration, read commands, docs — always in scope, and
+refusing it is an over-application of a scope limit, not caution. When a do-not list can be read
+two ways, read it against its stated purpose.
+
+**2026-11-07: State doc overstatement of readiness.** `docs/PHASE1B_STATE.md` § 2 originally said
+the pipeline runs end to end when anchors exist. "Anchors exist" means *anchor mints exist*, and
+converting mints into the rows the consumer reads requires S3 discovery (mint → genesis →
+first-20 buyers) plus anchor-table seeding. Neither is built. The distinction between "the
+pipeline works when anchor rows are seeded" and "the pipeline works when the user supplies anchor
+mints" was blurred by writing the doc from the consumer's input rather than from the user's.
+Mitigation: any state doc claiming end-to-end capability states the **input format** and any
+**intermediate step** that must be run first. "Supply anchors" is not enough; "supply anchors and
+run X" is.
+
 A related distinction worth keeping: the §6 column was **self-consistent and semantically
 stale, not arithmetically broken** — it reproduced the formula in force when it was written,
 and D21 changed the formula. Checking a column against a formula that was never operative for

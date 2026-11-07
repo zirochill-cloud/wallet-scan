@@ -1037,6 +1037,33 @@ def db_checks() -> bool:
         check("--band with no matches says so instead of printing an empty table",
               "no scores stored" in filtered.getvalue(), filtered.getvalue())
 
+        print("\n-- solscope consumer (run command) --------------------------------")
+        from solscope.cli import _cmd_consumer
+
+        scores_before = count(conn, "scores")
+        dry_out = io.StringIO()
+        with contextlib.redirect_stdout(dry_out):
+            rc_dry = _cmd_consumer(ctx, _argparse.Namespace(
+                rule_version=None, as_of=AS_OF, dry_run=True))
+        dry_text = dry_out.getvalue()
+        print(dry_text)
+        check("consumer --dry-run exits 0 against a real database", rc_dry == 0, dry_text)
+        check("the rule version defaults to what wallet_aggregates holds",
+              f"rule_version={RULE}" in dry_text, dry_text)
+        check("--dry-run writes no scores rows",
+              count(conn, "scores") == scores_before,
+              f"{scores_before} -> {count(conn, 'scores')}")
+        # By this point in the suite two wallets have been pruned by a later run, so
+        # the aggregate set is 4 wallets / 3 scorable — the same counts `scores`
+        # just listed above.
+        check("the summary counts gathered wallets and their bands",
+              "wallets seen   4" in dry_text and "scored         3" in dry_text
+              and "gated out      1" in dry_text, dry_text)
+        check("it prints a band for every name, including zeros",
+              all(band in dry_text for band in
+                  ("track", "watch", "investigate", "promising_thin", "exclude")),
+              dry_text)
+
     return True
 
 

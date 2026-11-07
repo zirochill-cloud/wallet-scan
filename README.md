@@ -9,20 +9,6 @@ that repeatedly buy promising tokens before the broader market does.**
 The design is complete and falsifiable, and implementation has begun: Phases 0–2 exist in
 `solscope/` with tests, and the price-derivation gate has **passed on live mainnet**.
 
-## Status
-
-| Phase | State |
-|---|---|
-| Feasibility + data-source verification | **Done** (docs 00–01) |
-| Architecture + schema + methodology design | **Done** (docs 02–06) |
-| Roadmap + risk register + validation plan | **Done** (docs 07–09) |
-| Phase 0 — CLI, schema, credit ledger with hard cap | **Done** — `solscope migrate\|doctor\|budget`, tested |
-| Phase 1 — forward collector (discovery, WSS archive, checkpoints) | **Done** — `solscope ingest`, verified live |
-| Phase 2 — swap decode + price derivation | **Done** — `solscope derive` |
-| Phase 2 go/no-go gate | **PASSED for PumpSwap** on live mainnet, re-confirmed 2026-10-26 (doc 11) |
-| Phase 1b — retrospective anchor discovery | **BLOCKED** — non-independent anchors; quality filter passed 44/45 bundled wallets (`NOTES.md` § `ANCHOR_SELECTION_CRITERIA`) |
-| Phase 3+ — positions, discovery, scoring, reports, validation | **Not started** |
-
 > **Scope of “Phase 2 complete.”** It means *PumpSwap only*: reserve-based price and
 > liquidity derivation for PumpSwap pools quoted in wSOL/USDC. **Not covered:** Raydium
 > AMM v4 / CPMM / LaunchLab, pump.fun bonding curves, Orca Whirlpool, Meteora DLMM,

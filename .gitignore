@@ -26,7 +26,9 @@ spikes/cache2/
 .pgtools/
 
 # Collected raw data (large + re-fetchable by design) and local run logs
-data/
+data/*
+# ...except the written anchor-input spec, which is documentation, not data.
+!data/seed_anchors.md
 data-*.log
 data-*.pid
 .cloud-attachments/
