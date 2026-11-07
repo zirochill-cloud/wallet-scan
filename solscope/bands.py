@@ -24,12 +24,12 @@ Two properties this module exists to preserve:
   distinction lives in ``band_reason`` (and therefore in ``gated_by``), because a
   collapsed band must not collapse the explanation.
 
-The thresholds come from ``config/scoring.yaml`` ``bands:`` — never hardcoded, so
-the deviation between the design's 70 and the configured 75 is visible in one
-place. The two conjuncts the config has no key for (the confidence floor that
-``track`` requires, and the ``promising_thin`` floors) are read from ``bands`` when
-present and otherwise default to the design's values; §5 fixes them, and inventing
-config keys for them is S12c's decision to record, not this module's to assume.
+The thresholds come from ``config/scoring.yaml`` ``bands:`` — never hardcoded. Since
+D22 the configured values are the design's (70 / 60 / 40), so the module and the
+design agree; the keys stay in config so a future calibration can move one without
+editing code. The confidence floor ``track`` requires and the ``promising_thin``
+floors are read from ``bands`` when present and otherwise default to the design's
+values (§5 fixes them; the defaults mean an older config file still behaves).
 
 Band basis (D21): while five of eight dimensions are unbuilt, the adjusted score
 is ``shrunk_early_entry x confidence / 100``, so these are **early-entry** bands —

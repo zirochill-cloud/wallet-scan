@@ -327,13 +327,16 @@ def logic_checks() -> None:
     check("the thin composite is well above the 40 floor, so only anchors can stop it",
           thin.composite_confidence > CONFIG["confidence_gate"]["confidence_min"])
 
-    check("golden pair: adjusted reproduces 80.19 / 29.25 from the design raws",
+    # The design's original sec 6 column was computed with this form. It is kept
+    # for the day scores.band_basis flips to overall_score (D21/D23), and it is
+    # explicitly NOT the phase-1b band basis - see the sec 6b block below.
+    check("full-model pull reproduces the design's original 80.19 / 29.25",
           (confidence_adjusted_score(Decimal("82"), rich.composite_confidence),
            confidence_adjusted_score(Decimal("28"), rich.composite_confidence))
           == (Decimal("80.19"), Decimal("29.25")),
           f"{confidence_adjusted_score(Decimal('82'), rich.composite_confidence)} / "
           f"{confidence_adjusted_score(Decimal('28'), rich.composite_confidence)}")
-    check("thin pair: adjusted is 66.66 / 34.53 from the same formula",
+    check("thin pair: the same pull gives 66.66 / 34.53 at 59.51",
           (confidence_adjusted_score(Decimal("78"), thin.composite_confidence),
            confidence_adjusted_score(Decimal("24"), thin.composite_confidence))
           == (Decimal("66.66"), Decimal("34.53")))
@@ -406,17 +409,21 @@ def logic_checks() -> None:
     no_anchors = gate_result(False, "distinct_anchors below minimum (2 < 3)")
     no_evidence = gate_result(False, "confidence below minimum (35.00 < 40.00)")
 
+    # D22: the configured thresholds are now the design's (70/60/40), and the
+    # adjusted numbers are the ones the pipeline actually produces - shrink at k=5
+    # then the D21 pull, not the retired pull-to-50 column. 19 anchors -> 19/24,
+    # 2 anchors -> 2/7.
     matrix = {
-        "good+rich": derive_band(Decimal("80.19"), Decimal("82"),
+        "good+rich": derive_band(Decimal("71.06"), Decimal("82"),
                                  Decimal("94.33"), passed, CONFIG),
-        "bad+rich": derive_band(Decimal("29.25"), Decimal("28"),
+        "bad+rich": derive_band(Decimal("30.74"), Decimal("28"),
                                 Decimal("94.33"), passed, CONFIG),
-        "good+thin": derive_band(Decimal("66.66"), Decimal("78"),
+        "good+thin": derive_band(Decimal("34.52"), Decimal("78"),
                                  Decimal("59.51"), no_anchors, CONFIG),
-        "bad+thin": derive_band(Decimal("34.53"), Decimal("24"),
+        "bad+thin": derive_band(Decimal("25.33"), Decimal("24"),
                                 Decimal("59.51"), no_anchors, CONFIG),
     }
-    check("good+rich is track (80.19 >= 75, confidence 94.33 >= 60)",
+    check("good+rich is track (71.06 >= 70, confidence 94.33 >= 60)",
           matrix["good+rich"].band == "track", matrix["good+rich"].band)
     check("bad+rich is exclude, because its raw 28 is below every threshold",
           matrix["bad+rich"].band == "exclude"
@@ -431,8 +438,8 @@ def logic_checks() -> None:
           and "promising_thin floor not met" in matrix["bad+thin"].band_reason,
           matrix["bad+thin"].band_reason)
     check("the pair identity holds on band_basis_score",
-          matrix["good+rich"].band_basis_score == Decimal("80.19")
-          and matrix["bad+rich"].band_basis_score == Decimal("29.25"))
+          matrix["good+rich"].band_basis_score == Decimal("71.06")
+          and matrix["bad+rich"].band_basis_score == Decimal("30.74"))
 
     check("watch is reachable: adjusted 65, confidence 70, gate passed",
           derive_band(Decimal("65"), Decimal("70"), Decimal("70"), passed,
@@ -451,10 +458,73 @@ def logic_checks() -> None:
           low_low.band == "exclude"
           and "AND confidence below watch threshold" in low_low.band_reason,
           low_low.band_reason)
-    check("band thresholds come from config, not the design's 70/40",
-          CONFIG["bands"] == {"track": 75, "watch": 60, "investigate": 45,
-                              "deprioritize": 0},
+    check("configured band thresholds are the design's after D22",
+          (CONFIG["bands"]["track"], CONFIG["bands"]["watch"],
+           CONFIG["bands"]["investigate"], CONFIG["bands"]["deprioritize"])
+          == (70, 60, 40, 0),
           f"{CONFIG['bands']}")
+    check("the track confidence conjunct is a config key, not a hidden default",
+          CONFIG["bands"]["track_min_confidence"] == 60,
+          f"{CONFIG['bands']}")
+
+    print("-- sec 6b: real shrinkage, and the 70/75 boundary ----------------")
+    from solscope.confidence import shrink_for_confidence
+    from solscope.consumer import shrink as shrink_observation
+
+    # Sec 6b: the pipeline's own shrinkage, not hand-supplied adjusted scores.
+    real = {}
+    for name, raw, anchors, confidence, gate in (
+            ("good+rich", "82", 19, "94.33", passed),
+            ("bad+rich", "28", 19, "94.33", passed),
+            ("good+thin", "78", 2, "59.51", no_anchors),
+            ("bad+thin", "24", 2, "59.51", no_anchors)):
+        shrunk, _factor = shrink_observation(Decimal(raw), anchors, k=Decimal(5),
+                                             prior=Decimal(50))
+        adjusted = shrink_for_confidence(shrunk, Decimal(confidence))
+        real[name] = (shrunk, adjusted, derive_band(adjusted, Decimal(raw),
+                                                    Decimal(confidence), gate, CONFIG))
+    check("19 anchors shrink 82 -> 75.33 and 28 -> 32.58",
+          (round(real["good+rich"][0], 2), round(real["bad+rich"][0], 2))
+          == (Decimal("75.33"), Decimal("32.58")),
+          f"{real['good+rich'][0]} / {real['bad+rich'][0]}")
+    check("2 anchors shrink 78 -> 58.00 and 24 -> 42.57",
+          (round(real["good+thin"][0], 2), round(real["bad+thin"][0], 2))
+          == (Decimal("58.00"), Decimal("42.57")),
+          f"{real['good+thin'][0]} / {real['bad+thin'][0]}")
+    check("the pipeline produces 71.06 / 30.74 / 34.52 / 25.33",
+          tuple(real[k][1] for k in
+                ("good+rich", "bad+rich", "good+thin", "bad+thin"))
+          == (Decimal("71.06"), Decimal("30.74"), Decimal("34.52"),
+              Decimal("25.33")),
+          str({k: str(v[1]) for k, v in real.items()}))
+    check("D23: the matrix scores are the produced ones, not the old pull-to-50 column",
+          all(matrix[k].band_basis_score == real[k][1] for k in matrix),
+          str({k: (str(matrix[k].band_basis_score), str(real[k][1]))
+               for k in matrix}))
+
+    import copy
+    before = copy.deepcopy(CONFIG)
+    before["bands"].update({"track": 75, "investigate": 45})
+    at_75 = derive_band(real["good+rich"][1], Decimal("82"), Decimal("94.33"),
+                        passed, before)
+    check("sec 6b: the same wallet is watch under the old 75 floor",
+          at_75.band == "watch", at_75.band)
+    check("sec 6b: and track under the configured 70 - 71.06 is the boundary",
+          real["good+rich"][2].band == "track"
+          and Decimal("70") <= real["good+rich"][1] < Decimal("75"),
+          f"{real['good+rich'][2].band} at {real['good+rich'][1]}")
+    bad_at_75 = derive_band(real["bad+rich"][1], Decimal("28"), Decimal("94.33"),
+                            passed, before)
+    check("sec 6b: bad+rich stays exclude under both thresholds, on raw_below_investigate",
+          (real["bad+rich"][2].band, bad_at_75.band) == ("exclude", "exclude")
+          and real["bad+rich"][2].band_reason == "raw_below_investigate"
+          and real["bad+rich"][1] < Decimal("40"),
+          f"{real['bad+rich'][2].band}/{real['bad+rich'][2].band_reason} "
+          f"at {real['bad+rich'][1]}")
+    check("sec 6b: the thin pair is decided by the gate, so D22 does not move it",
+          (real["good+thin"][2].band, real["bad+thin"][2].band)
+          == ("promising_thin", "exclude"),
+          f"{real['good+thin'][2].band} / {real['bad+thin'][2].band}")
 
     print("-- wallet assembly ------------------------------------------------")
     scored = build_wallet_score(

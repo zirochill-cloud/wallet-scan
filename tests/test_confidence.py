@@ -375,19 +375,22 @@ def db_checks(dsn: str) -> None:
               evaluate_gate(conn, "ConfFive", as_of=AS_OF,
                             config=divisor).composite_confidence == dec("50.00"))
 
-        print("\n[sec 5 adjusted arithmetic, at the design's raws]")
-        check("good+rich raw 82 at 94.33 -> 80.19",
+        # confidence_adjusted_score is the full-model form (50 + (score-50)*conf/100).
+        # sec 6's original column came from it; D21/D23 replaced that column with
+        # the shrunk_early_entry basis the bands now read.
+        print("\n[full-model pull arithmetic, at the design's raws]")
+        check("good+rich raw 82 at 94.33 -> 80.19 (full-model form)",
               confidence_adjusted_score(Decimal("82"), rich.composite_confidence)
               == dec("80.19"),
               str(confidence_adjusted_score(Decimal("82"), rich.composite_confidence)))
-        check("bad+rich raw 28 at 94.33 -> 29.25",
+        check("bad+rich raw 28 at 94.33 -> 29.25 (full-model form)",
               confidence_adjusted_score(Decimal("28"), rich.composite_confidence)
               == dec("29.25"))
-        check("good+thin raw 78 at 59.51 -> 66.66 (design's 60.51 gives 66.94)",
+        check("good+thin raw 78 at 59.51 -> 66.66 (the pre-D20 60.51 gives 66.94)",
               confidence_adjusted_score(Decimal("78"), thin.composite_confidence)
               == dec("66.66"),
               str(confidence_adjusted_score(Decimal("78"), thin.composite_confidence)))
-        check("bad+thin raw 24 at 59.51 -> 34.53 (design's 60.51 gives 34.27)",
+        check("bad+thin raw 24 at 59.51 -> 34.53 (the pre-D20 60.51 gives 34.27)",
               confidence_adjusted_score(Decimal("24"), thin.composite_confidence)
               == dec("34.53"))
         print("\n[missing inputs score 0.0, never NULL]")

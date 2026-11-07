@@ -88,10 +88,19 @@ def main() -> int:
                 f"sum={s!r} from {sub}",
             )
 
-    # Bands must be strictly descending so that band lookup is unambiguous.
+    # Bands must be strictly descending so that band lookup is unambiguous. The
+    # optional keys are the parts of §5's rule that are not flat thresholds; they
+    # do not take part in the ordering.
     bands = cfg["bands"]
     order = ["track", "watch", "investigate", "deprioritize"]
-    check("band keys are exactly the expected set", set(bands) == set(order), f"got {set(bands)}")
+    optional = {"track_min_confidence", "promising_thin_raw",
+                "promising_thin_confidence"}
+    check("band thresholds are exactly the expected four keys",
+          set(bands) - optional == set(order), f"got {set(bands)}")
+    check("no unknown band keys", not (set(bands) - optional - set(order)))
+    # D22: the configured thresholds are the design's.
+    check("bands match the design (70 / 60 / 40 / 0) after D22",
+          [bands[k] for k in order] == [70, 60, 40, 0], f"got {[bands[k] for k in order]}")
     values = [bands[k] for k in order]
     check(
         "bands are strictly descending",

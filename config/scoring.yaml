@@ -39,10 +39,11 @@ gates:
 # Recommendation bands, applied to confidence_adjusted_score (descending).
 # ---------------------------------------------------------------------------
 bands:
-  track:         75
+  track:         70            # D22: design value (D15); was 75
+  track_min_confidence: 60     # §5: track needs evidence, not just score
   watch:         60
-  investigate:   45
-  deprioritize:   0            # anything below `investigate`
+  investigate:   40            # D22: design value; was 45
+  deprioritize:   0            # anything below `investigate` (legacy, unreachable)
 
 # ---------------------------------------------------------------------------
 # Shrinkage: shrunk = (n/(n+k))*observed + (k/(n+k))*prior
