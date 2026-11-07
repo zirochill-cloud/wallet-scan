@@ -1,5 +1,8 @@
 # SolScope — Smart-Money Wallet Intelligence for Solana
 
+> **Tool is functionally complete. Requires an anchor set to produce rankings — see
+> [docs/PHASE1B_STATE.md](docs/PHASE1B_STATE.md).**
+
 A zero-budget, evidence-driven system for **discovering, scoring, and monitoring Solana wallets
 that repeatedly buy promising tokens before the broader market does.**
 

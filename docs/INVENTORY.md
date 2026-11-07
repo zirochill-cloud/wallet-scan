@@ -8,7 +8,8 @@ Status key: **verified** (re-checked against a live system or test this session)
 (verified in an earlier session, evidence not in this repo) · **draft** (design intent, not yet
 built or tested) · **stale** (out of date; superseded).
 
-Verification date for everything marked *verified*: **2026-10-26**, PostgreSQL 16.6, Helius mainnet.
+Verification date for everything marked *verified*: **2026-10-26**, PostgreSQL 16.6, Helius mainnet,
+except the `PHASE1B_*` rows, which were verified on **2026-11-07** against `bootstrap_db.sh`.
 
 ---
 
@@ -21,14 +22,17 @@ Verification date for everything marked *verified*: **2026-10-26**, PostgreSQL 1
 | `02-architecture.md` | verified, with a known gap | Components, two-tier storage, data flows | Naive reserve formula removed after doc 10. **Gap:** component `C derive` is described generically as "pool reserves → price …", but the implementation prices **PumpSwap only** (see inconsistencies #1). |
 | `03-mvp-scope.md` | verified | Phase acceptance criteria; Phase 2 gate | Status line added with measured results. |
 | `04-data-model.md` | verified — one figure corrected | The schema and why it is shaped that way | 41/484/106/53 re-measured and confirmed. **"306 check constraints" was wrong** — it counted 285 NOT NULL pseudo-checks + 22 real checks. Corrected to 22 (inconsistency #2). |
-| `05-scoring-methodology.md` | verified as config, **unimplemented** | 8 sub-scores, weights, shrinkage, gates, bands | `config/scoring.yaml` validates (`test_scoring_config` green), but `solscope score` is still a stub. Design ≠ behaviour until Phase 6. |
+| `05-scoring-methodology.md` | verified as config, **partly implemented** | 8 sub-scores, weights, shrinkage, gates, bands | Early-entry dimension, confidence composite, gate, adjusted score and bands are implemented (§12; see `PHASE1B_SECTION12.md`). Five of the eight dimensions are still design only, and `solscope score` remains a Phase 6 stub. |
 | `06-ai-pipeline.md` | draft | Fact/LLM separation, claim verifier | Phase 8 not started; nothing to verify against. |
 | `07-roadmap.md` | verified for Phases 0–2 | Ten phases with exit criteria | Status block added under Phase 2 recording that **criteria 2 and 3 were not evaluated as written** (inconsistency #3). Later phases remain planning. |
 | `08-risks.md` | draft | Risk register and cost traps | Not revisited this session. |
 | `09-validation.md` | draft | How the ranking is proven useful or not | Phase 9 cannot run until 6–12 weeks of data exist and DEX coverage is complete. |
 | `10-phase2-spike.md` | carried — method superseded | First live price-derivation test, 3 runs, 37 swaps | Historically accurate, including its *correction* of the naive formula. Its method (one sampled trade vs `priceNative`) is superseded by doc 11 (reserves vs reserves). Cross-linked. |
 | `11-phase2-gate.md` | **verified — current authority** | The go/no-go gate: criterion, method, results, scope, blocker | Three passes recorded: 0.39% (run A), **0.36% grade run**, 0.95% (three-number run). Carries the PumpSwap scope qualifier and the Phase 1b blocker. |
-| `INVENTORY.md` | current | This file | — |
+| `PHASE1B_STATE.md` | **current — start here** | What is built, what it needs to rank wallets, what is deferred, anchor options, next-session order | Written 2026-11-07. Entry point for a returning session; supersedes the status lines below. |
+| `PHASE1B_SCOPING.md` | **implemented** — decisions D1–D23 | §12 decisions with alternatives and reasons: gates, band rules, `promising_thin`, `band_basis`, D22 thresholds, D23 matrix correction | Every decision that changed behaviour is reflected in code and tests; the ones that did not (e.g. retiring Option 3) say so. |
+| `PHASE1B_SECTION12.md` | **implemented** — design, matrices §6/§6b | Five confidence factors, composite, gate, adjusted score and basis, five bands, §6b real-shrinkage band outcomes | Harness green at `bootstrap_db.sh`. Remaining functional blocker is the empty anchor set, not the design. |
+| `INVENTORY.md` | current — partially stale below | This file | The docs table is current. The `schema/` row counts and "no writer yet" claims in later sections are dated 2026-10-26, before Phase 3 and §12; see `PHASE1B_STATE.md`. |
 
 ---
 

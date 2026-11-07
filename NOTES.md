@@ -208,13 +208,35 @@ that only agrees with itself is a transcription, not a check. The §6b tests now
 `shrink()` and `shrink_for_confidence()` and compare their output against the matrix
 constants, so a formula change breaks the doc's numbers instead of silently orphaning them.
 
-**A correction to the correction:** the first draft of §6b carried supplied figures of
-42.75 / 40.33 for bad+rich and 52.67 / 31.34, 32.33 / 19.24 for the thin pair, and drew a
-design question from bad+rich landing in `investigate`. At `k=5`, `n=19`, raw 28 the shrunk
-score is 32.58 (adjusted 30.74), and the thin pair is 58.00 / 42.57 — the supplied numbers are
-not reproducible from the implemented shrinkage. bad+rich therefore stays `exclude` under both
-70 and 75, and the design question does not arise. Recomputing from the code rather than from
-a description of the code is what settled it.
+**A correction to the correction — supplied figures rejected.** The first draft of §6b carried
+supplied figures of **42.75 / 40.33 for bad+rich** and **52.67 / 31.34**, **32.33 / 19.24 for
+the thin pair**, and drew a design question from bad+rich landing in `investigate`. At `k=5`,
+`n=19`, raw 28 the shrunk score is **32.58** (adjusted **30.74**), and the thin pair is
+**58.00** / **42.57** (adjusted **34.52** / **25.33**) — the supplied numbers are not
+reproducible from the implemented shrinkage. 42.75 at that weight would need a raw score of
+about 39, not 28. bad+rich therefore stays `exclude` under both 70 and 75, the
+exclude → investigate finding is **retracted**, and no design decision is pending on it. The
+rejected values are kept here rather than deleted so a later reader does not reintroduce them.
+
+The tests now derive the matrix from `shrink()` and `shrink_for_confidence()` and compare that
+output against the §6 constants, so a future formula change breaks the doc's numbers instead of
+silently orphaning them.
+
+**2026-11-07: Second user-side arithmetic error in the same session.** The first was "+rich
+anchors 4 ≥ 3" (inconsistent with sample 1.00). The second was checking §6's adjusted column
+against `raw × conf/100` when the operative formula is `shrunk_early × conf/100`, and then
+recomputing the real-shrinkage matrix with wrong factors (42.75 / 52.67 / 32.33). Both errors
+were caught by the agent deriving from actual `shrink()` and `shrink_for_confidence()` calls
+rather than accepting the instruction's arithmetic. The discipline that catches these — derive
+every fixture from the implementation, not from a mental formula — applies to user instructions
+symmetrically to agent fixtures. When a user instruction contains hand-computed values, derive
+them from code before acting.
+
+A related distinction worth keeping: the §6 column was **self-consistent and semantically
+stale, not arithmetically broken** — it reproduced the formula in force when it was written,
+and D21 changed the formula. Checking a column against a formula that was never operative for
+it is a different error from checking a column against nothing at all, and only the second is
+caught by re-deriving from the other columns.
 
 ---
 

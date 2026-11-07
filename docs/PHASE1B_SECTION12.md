@@ -314,8 +314,12 @@ Then the D21 pull — `shrunk × confidence/100`:
 > values are `50 + (raw − 50) × confidence/100`: the pull-to-50 form that D21 retired for this
 > phase, applied to an unshrunk score. They are the correct numbers for the `overall_score`
 > basis that arrives with the other five dimensions, and they are not the number S12c bands.
-> Because they were plausible rather than impossible, nothing flagged them until the config
-> change made the 75/70 boundary visible; see `NOTES.md` § PROCESS_FAILURES.
+> The column was **self-consistent and semantically stale, not arithmetically broken**: it
+> reproduced the formula that was operative when §6 was written, and the formula is what
+> changed, not the arithmetic. Checking it against `raw × confidence/100` tests a formula that
+> was never operative at write time. Because the values were plausible rather than impossible,
+> nothing flagged them until the config change made the 75/70 boundary visible; see `NOTES.md`
+> § PROCESS_FAILURES.
 >
 > Shrinkage and the pull also mean the column no longer orders the way a reader expects:
 > bad+thin (25.33) is below bad+rich (30.74) even though the thin wallet's raw score is closer
