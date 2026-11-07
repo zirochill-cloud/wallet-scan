@@ -221,30 +221,29 @@ wallets. Every excluded or thin wallet keeps a `gated_by` reason (`raw_below_inv
 `distinct_anchors below minimum`), so collapsing four bands into five does not collapse the
 diagnostics — see D13 in `docs/PHASE1B_SCOPING.md` § Q4.
 
-**Current values in `scoring.yaml`, reported rather than replaced:**
+**Values in `scoring.yaml`, after D22:**
 
 ```yaml
 bands:
-  track:         75
-  watch:         60
-  investigate:   45
-  deprioritize:   0
+  track:                  70   # was 75
+  track_min_confidence:   60
+  watch:                  60
+  investigate:            40   # was 45
+  deprioritize:            0
 ```
 
-These are four flat thresholds on `confidence_adjusted_score` with no confidence conjunct, and
-doc 05 §13 documents the same four (`≥75` track, `60–74` watch, `45–59` investigate,
-`<45` deprioritize). The rule above deviates in five ways, each deliberate:
+D22 aligned the config with the design, so the rule below no longer carries a threshold
+deviation. What the yaml still does not express is the rest of the rule — the bands are not
+four flat windows on `confidence_adjusted_score`, and doc 05 §13's `≥75 / 60–74 / 45–59 / <45`
+describes the version this replaces. The rule above differs in five ways, each deliberate:
 
-1. **Track gains a confidence conjunct** (≥60). Without it, a 78-adjusted wallet at 45
-   confidence is indistinguishable from a 78-adjusted wallet at 90, and the first is a
-   shrinkage artifact — a raw 88 with three anchors stores 78 once, and 88's evidence is what
-   the band is supposed to be about.
-2. **The investigate floor would drop from 45 to 40** — **not applied in S12c**, because band
-   thresholds were out of scope for that turn. The implemented rule reads the configured
-   75/60/45, so the deviation is recorded here and remains a decision rather than a silent
-   change; `track`'s confidence conjunct (≥60) is implemented, with no config key of its own.
-   The old raw-override escape hatch is gone either way: the genuinely unreachable case was
-   the anchor-constrained one, and that is `promising_thin`'s job.
+1. **Track gains a confidence conjunct** (≥60), now a visible config key. Without it, a
+   78-adjusted wallet at 45 confidence is indistinguishable from a 78-adjusted wallet at 90,
+   and the first is a shrinkage artifact — a raw 88 with three anchors stores 78 once, and
+   88's evidence is what the band is supposed to be about.
+2. **The investigate floor is 40, not 45** — the design value, applied by D22 once threshold
+   changes were in scope. The old raw-override escape hatch stays gone: the genuinely
+   unreachable case was the anchor-constrained one, and that is `promising_thin`'s job.
 3. **`watch` survives; `deprioritize` does not.** `watch` is currently configured
    (`bands.watch: 60`), and D15 keeps it at that threshold, so the band is not new — what
    changes is its meaning: from the flat 60–74 window to "60 and up that `track` did not
@@ -261,9 +260,12 @@ doc 05 §13 documents the same four (`≥75` track, `60–74` watch, `45–59` i
    The genuinely unreachable case was the anchor-constrained one, and that is
    `promising_thin`'s job, gated on raw because adjusted is shrunken by the missing anchors.
 
-A deviation that is *not* proposed: the confidence-adjusted pull itself. It stays
-`50 + (score−50)·conf/100`, so a low-confidence wallet is neither rewarded nor punished, just
-declined. Band rules decide what to *do* with a declined claim; they do not change the number.
+A deviation that is *not* proposed: the confidence pull's shape. The pull keeps its meaning
+— a low-confidence wallet is neither rewarded nor punished, just declined — and band rules
+decide what to *do* with a declined claim, never what the number is. What changed under D21
+is only which score the pull is applied to in this phase (`shrunk_early_entry` rather than the
+placeholder `overall_score`); `50 + (score−50)·conf/100` remains the form for the `overall_score`
+basis, and the code keeps it as `confidence_adjusted_score` for that day.
 
 ---
 
@@ -281,19 +283,44 @@ class, so the only difference between the good and bad member of a pair is the r
 | metadata (0.10) | 0.95 | 0.95 | 0.50 | 0.50 |
 | **confidence_score** | **94.33** | **94.33** | **59.51** | **59.51** |
 | distinct computed anchors | 19 | 19 | 2 | 2 |
-| raw score | 82.00 | 28.00 | 78.00 | 24.00 |
-| `confidence_adjusted_score` | 80.19 | 29.25 | 66.66 | 34.53 |
+| shrinkage weight `n/(n+5)` | 0.7917 | 0.7917 | 0.2857 | 0.2857 |
+| raw score (early-entry composite) | 82.00 | 28.00 | 78.00 | 24.00 |
+| shrunk early-entry score | 75.33 | 32.58 | 58.00 | 42.57 |
+| `confidence_adjusted_score` (`shrunk_early_entry`) | 71.06 | 30.74 | 34.52 | 25.33 |
 | gate | pass | pass | **fail** (2 < 3) | **fail** (2 < 3) |
-| band | `track` | `exclude` | `promising_thin` | `exclude` |
+| band (70/60/40, D22) | `track` | `exclude` | `promising_thin` | `exclude` |
 
-Arithmetic, written out so a reviewer can check it without running code:
+Arithmetic, written out so a reviewer can check it without running code. Confidence first:
 
 - rich: `0.30·0.95 + 0.25·0.90 + 0.20·1.00 + 0.15·0.9223 + 0.10·0.95`
   = `0.2850 + 0.2250 + 0.2000 + 0.1383 + 0.0950` = `0.9433` → **94.33**
 - thin: `0.30·0.50 + 0.25·0.75 + 0.20·0.40 + 0.15·0.8507 + 0.10·0.50`
   = `0.1500 + 0.1875 + 0.0800 + 0.1276 + 0.0500` = `0.5951` → **59.51**
-- good+rich: `50 + 32·0.9433 = 80.19`; bad+rich: `50 − 22·0.9433 = 29.25`
-- good+thin: `50 + 28·0.5951 = 66.66`; bad+thin: `50 − 26·0.5951 = 34.53`
+
+Then shrinkage at `k=5`, prior 50 — `n/(n+5)·raw + 5/(n+5)·50`, with `n` the distinct computed
+anchors, which is the same count the confidence sample factor uses:
+
+- good+rich: `0.7917·82 + 0.2083·50` = `64.9167 + 10.4167` = **75.33**
+- bad+rich: `0.7917·28 + 0.2083·50` = `22.1667 + 10.4167` = **32.58**
+- good+thin: `0.2857·78 + 0.7143·50` = `22.2857 + 35.7143` = **58.00**
+- bad+thin: `0.2857·24 + 0.7143·50` = `6.8571 + 35.7143` = **42.57**
+
+Then the D21 pull — `shrunk × confidence/100`:
+
+- `75.33·0.9433 = 71.06`; `32.58·0.9433 = 30.74`
+- `58.00·0.5951 = 34.52`; `42.57·0.5951 = 25.33`
+
+> **D23 — the previously published adjusted column was 80.19 / 29.25 / 66.66 / 34.53.** Those
+> values are `50 + (raw − 50) × confidence/100`: the pull-to-50 form that D21 retired for this
+> phase, applied to an unshrunk score. They are the correct numbers for the `overall_score`
+> basis that arrives with the other five dimensions, and they are not the number S12c bands.
+> Because they were plausible rather than impossible, nothing flagged them until the config
+> change made the 75/70 boundary visible; see `NOTES.md` § PROCESS_FAILURES.
+>
+> Shrinkage and the pull also mean the column no longer orders the way a reader expects:
+> bad+thin (25.33) is below bad+rich (30.74) even though the thin wallet's raw score is closer
+> to good+rich's. Three anchors' worth of evidence is a large penalty, and the matrix is now
+> read for band outcomes rather than for a monotonic score ordering.
 
 > **Fixture correction (D20), thin column only.** Coverage and metadata divide by the same
 > denominator — the anchors the wallet was measured on — so with 2 measured anchors metadata
@@ -310,16 +337,55 @@ Read the bands carefully: the *pairs* differ (track vs exclude; promising_thin v
 which is the whole point. The score separates them; confidence does not. Three things worth
 noting in the matrix:
 
-- `bad+rich` sits at 29.25, and the band rule would call it `exclude` on the score alone. Rich
-  data does not rescue a bad wallet — confidence is not a benefit that good wallets earn.
-- `good+thin` is the row that forced `promising_thin`. It has the *highest* adjusted score
-  among the non-track wallets (66.66), raw 78 and confidence 59.51, and two anchors — so it
-  is unrankable, and under the three-band rule it disappeared. It now appears in `scores`
-  with `band='promising_thin'` and `gated_by='distinct_anchors below minimum'`: visible,
-  unranked, and explained.
+- `bad+rich` sits at 30.74 — `exclude` on `raw_below_investigate` (raw 28 is below the 40
+  floor too). Rich data does not rescue a bad wallet: confidence is not a benefit that good
+  wallets earn, and 19 anchors of it move a raw 28 to 32.58, not to a ranking.
+- `good+thin` is the row that forced `promising_thin`, and under the current formula it is
+  *not* the highest adjusted score among non-track wallets — it is 34.52, second from the
+  bottom. Its raw 78 at two anchors shrinks to 58.00 before the 59.51 pull. That is exactly
+  why the band gates on raw: the adjusted number has already been reduced by the missing
+  anchors, so asking it to clear the bar would demand the wallet prove the thing its anchors
+  prevent it from proving. It appears in `scores` with `band='promising_thin'` and
+  `gated_by='distinct_anchors below minimum'`: visible, unranked, explained.
 - `bad+thin` shares that confidence (59.51) and is `exclude`, because its raw 24 fails the
-  `raw >= 70` conjunct. The two thin wallets therefore separate on band while sharing
-  confidence exactly — orthogonality holding in the branch that was just added.
+  `raw >= 70` conjunct. The two thin wallets separate on band while sharing confidence
+  exactly, and they now also share the shrinkage weight (0.2857): the raw score is the only
+  thing that differs, and it is enough — orthogonality holding in the branch that was just
+  added.
+
+---
+
+## §6b Real shrinkage and the band threshold change
+
+Section §6 *is* the real-shrinkage arithmetic: the design's anchor counts (19 computed for
+rich, 2 for thin) are counts a real wallet can have, so once the current formula is applied
+the matrix already carries shrinkage. §6b exists for the part §6 does not show — what the
+threshold change from 75/45 to 70/40 does to these four wallets, and where the boundary sits.
+
+| | good+rich | bad+rich | good+thin | bad+thin |
+|---|---:|---:|---:|---:|
+| shrunk early-entry | 75.33 | 32.58 | 58.00 | 42.57 |
+| `confidence_adjusted_score` | 71.06 | 30.74 | 34.52 | 25.33 |
+| gate | pass | pass | fail (2 < 3) | fail (2 < 3) |
+| band @ 75 / 60 / 45 (pre-D22) | `watch` | `exclude` | `promising_thin` | `exclude` |
+| band @ 70 / 60 / 40 (D22) | **`track`** | `exclude` | `promising_thin` | `exclude` |
+
+Three things are worth reading off this table:
+
+- **Only good+rich moves, and it moves because 71.06 lies between 70 and 75.** At 75 the
+  wallet is `watch`; at 70 it is `track`. The matrix at the old design number (80.19) could
+  not have shown this: 80.19 clears both thresholds, so the D22 change would have looked
+  inert. The boundary wallet is the test, and it is asserted.
+- **`bad+rich` stays `exclude` under both thresholds.** A draft of this table put it at
+  42.75 (adjusted 40.33) and treated the move to `investigate` as a finding about shrinkage
+  being too gentle. That figure is not reproducible: with `n=19`, `k=5`, raw 28 the shrunk
+  score is 32.58, not 42.75 — 42.75 would require a raw score of about 39 at the same weight.
+  Shrinkage is *not* gentle enough to lift a raw-28 wallet into `investigate`, and at 40 the
+  band remains `exclude` on `raw_below_investigate`. No design decision is needed on this
+  point.
+- **The thin pair is unaffected by the threshold change**, because neither reaches the
+  adjusted floors at all and both are decided by the gate. Their bands are set by raw score
+  and the anchor conjunct, which D22 did not touch.
 
 ---
 
@@ -411,7 +477,7 @@ conjunct. Bands remain `exclude` until S12c, so no wallet is ranked on this turn
 
 **S12c — band derivation and `solscope scores` read command.** *Done (2026-11-06).*
 `solscope/bands.py` implements the five rules with the thresholds read from `scoring.yaml`
-(currently 75 / 60 / 45, so `track`'s 75 is the configured value rather than §5's 70);
+(70 / 60 / 40 since D22, matching §5);
 `schema/006` admits `promising_thin` to the band CHECK and the recommendation enum and
 comments `deprioritize` as a legacy value; `solscope/report.py` plus the `solscope scores`
 command print band, adjusted, raw, confidence, gate outcome and `gated_by` from the latest run,

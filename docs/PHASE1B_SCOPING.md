@@ -468,6 +468,23 @@ derived from it therefore answer "is this wallet's early-entry ability worth tra
 semantics are legitimate; only one is available at each phase, and a row that does not say
 which one it is invites a future reader to compare two different things.
 
+**D22 — apply §5's band thresholds to the config.** `bands.track` 75 → 70 and
+`bands.investigate` 45 → 40, with `watch` 60 and `deprioritize` 0 unchanged, plus an
+explicit `track_min_confidence: 60`. The earlier turns left the deviation in place because
+band thresholds were not theirs to change; that reason has expired, and a config that
+disagrees with the design it cites makes every band report read as a discrepancy. The proof
+that this matters is not the matrix wallet at 80.19: it is a real 19-anchor wallet at raw 82,
+whose adjusted score is 71.06 — `watch` under 75, `track` under 70.
+
+**D23 — §6's adjusted column was produced by the retired pull-to-50 formula.** Every row in
+the matrix was computed as `50 + (raw − 50) × confidence/100`, which is what
+`confidence_adjusted_score` did before D21 changed the basis to `shrunk_early_entry ×
+confidence/100`. The column is therefore arithmetically correct and semantically stale: it is
+the number the design would band *after* the other five dimensions exist, and it includes no
+shrinkage. The matrix now shows the current formula with the shrinkage step written out
+(§6) and a band-outcome table under the configured thresholds (§6b); the old column is kept
+in a footnote rather than deleted, because it is what a reader may remember reading.
+
 **Penalise thinness at one semantic level, not two.** With a gate that can exclude a thin
 wallet, shrinkage should not also drag it to the middle — otherwise a wallet is punished
 once for having few anchors and again for being shrunk toward the prior. `k = 5` keeps a

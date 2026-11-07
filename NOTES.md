@@ -187,6 +187,35 @@ composite is 60.00. The test failed, the check was corrected, and the assertion 
 prediction being wrong in the test output is the process working, not a reason to loosen the
 check.
 
+**2026-11-06: §6's adjusted column was the wrong formula, and it looked fine.** Every adjusted
+value in the matrix (80.19 / 29.25 / 66.66 / 34.53) was computed as
+`50 + (raw − 50) × confidence/100`. That is `confidence_adjusted_score`, the pull-to-50 form
+that D21 retired for this phase; the bands read `shrunk_early_entry × confidence/100`, which
+also shrinks first. So the column was arithmetically self-consistent about a number the
+pipeline does not produce, and S12c's band tests banded it (80.19 → `track`) while a live
+19-anchor wallet at the same raw score lands at 71.06.
+
+The metadata fixture error was caught because it produced impossible row values — metadata
+0.60 at two anchors. This was not caught because it produced *plausible* values that simply
+did not match `raw × composite / 100`. Same class, opposite failure mode: in both cases one
+side of an equation was checked against the formula and the other side was never derived.
+D23 recomputes the column and §6b shows the band consequences.
+
+**The discipline that catches both:** every hand-computed column must be re-derived from the
+other columns by a second, independent path. If `adjusted = f(raw, composite)`, invert it — or
+better, recompute it with the code that will store it — and assert the two agree. A column
+that only agrees with itself is a transcription, not a check. The §6b tests now call
+`shrink()` and `shrink_for_confidence()` and compare their output against the matrix
+constants, so a formula change breaks the doc's numbers instead of silently orphaning them.
+
+**A correction to the correction:** the first draft of §6b carried supplied figures of
+42.75 / 40.33 for bad+rich and 52.67 / 31.34, 32.33 / 19.24 for the thin pair, and drew a
+design question from bad+rich landing in `investigate`. At `k=5`, `n=19`, raw 28 the shrunk
+score is 32.58 (adjusted 30.74), and the thin pair is 58.00 / 42.57 — the supplied numbers are
+not reproducible from the implemented shrinkage. bad+rich therefore stays `exclude` under both
+70 and 75, and the design question does not arise. Recomputing from the code rather than from
+a description of the code is what settled it.
+
 ---
 
 ## § AGGREGATION_EDGE_CASES
@@ -255,7 +284,9 @@ later — the same discipline as `§ DATA_LOSS_2026_10` and `§ PROCESS_FAILURES
 | `confidence_gate.min_distinct_anchors` | 3 | A validity rule, not a calibration: two anchors compute but cannot be ranked. Deliberately separate from `sample_full_credit_at` (D5) so a calibration edit cannot move the rankability floor. | A power analysis showing two-anchor ranking is defensible after all. |
 | `confidence.sample_full_credit_at` | 5 | Distinct computed anchors at which more anchors stop adding confidence (D5). Reaches full credit at the same five anchors where shrinkage gives an observation half weight. | Anchor counts routinely exceed 10 and the score needs more resolution at the top. |
 | `scores.band_basis` | `shrunk_early_entry` | Bands read the one measured dimension, scaled by confidence (D21); `overall_score` is the neutral 50.00 placeholder, and pulling it returns 50.00 for every wallet. | Five more dimensions built — flip to `overall_score`, at which point the same bands become full-wallet bands. |
-| `bands.track` (configured) | 75 | **Deviation from §5's 70**, left as configured because band thresholds are not this turn's to change. With the early-entry basis, `track` requires both 75 adjusted and confidence ≥60; the design's 70 would admit a slightly wider top band. | The first real anchor run: compare how many wallets sit in 70–75. |
+| `bands.track` (configured) | 70 | Matches §5 as of D22 (was 75). With the early-entry basis `track` also requires confidence ≥60. The difference is load-bearing, not cosmetic: a real 19-anchor wallet at raw 82 adjusts to 71.06, so it was `watch` at 75 and is `track` at 70 (§6b). | The first real anchor run: if 70–75 fills with wallets that do not survive inspection, `track` is too cheap. |
+| `bands.track_min_confidence` | 60 | §5: adjusted score alone lets a shrinkage artifact look like a ranking (§5 point 1). Now an explicit config key rather than a module default, so the conjunct is visible beside the threshold it guards. | A high-adjusted, low-confidence wallet is manually validated and turns out to be real. |
+| `bands.investigate` (configured) | 40 | Matches §5 as of D22 (was 45). Lowers the floor for manual review by five points; whether that is too generous is a question for real anchor runs, not for the fixture. | The first real anchor run: inspect the 40–45 band and see whether those wallets are worth a human's time. |
 
 Factor `f = n/(n+k)` at `k=5`, by sample size: n=2 → 0.2857, n=3 → 0.3750, n=5 → 0.5000,
 n=9 → 0.6429, n=15 → 0.7500, n=30 → 0.8571. At `k=15` the same sizes gave 0.1176, 0.1667,
