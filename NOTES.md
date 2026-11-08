@@ -129,6 +129,29 @@ EVgwa5CHBVwk6sCTa4QJrVXYBKngZhYqh2a2ZGDApump   (pump.fun mint)
 
 If these are the lost Phase 1a seeds, they are the only surviving record of that set.
 
+### Identification of the two unclassified addresses (2026-11-07)
+
+**Status: resolved on chain.** Both "unclassified" addresses are token **mints**, not
+wallets, and both are now named. Verified with `getAccountInfo` (jsonParsed) on
+2026-11-07, not from the user report alone:
+
+| Address | Reported symbol | On-chain | Resolution |
+|---|---|---|---|
+| `zj1jpp7QMveWHLs61vL9KMZf254KvW7j4AAmBF8ry2k` | $BULLSHIT | SPL Token (classic) mint, 6 dp, supply 978,079,929.862300, mint authority revoked, **no token metadata** | Mint confirmed. Symbol is user-supplied only — a classic SPL mint with no metadata carries no on-chain symbol, so `$BULLSHIT` is not independently verifiable here. |
+| `7Y7V1a4m2nWK7BMgbka5B4vR1pDvCK7yva3Hnrqkraze` | $NASDUQ | Token-2022 mint, 6 dp, metadata name/symbol **"Nasduck"**, mint authority revoked | Mint confirmed. Metadata says *Nasduck*, not NASDUQ — treat `$NASDUQ` as the user's label and `Nasduck` as the on-chain one. |
+
+**Address-form correction.** The 2026-11-07 message typed this mint as
+`7YV1a4m2nWK7BMgbka5B4vR1pDvCK7yva3Hnrqkraze` (43 characters), which has **no account on
+chain**. The 44-character form recorded above — `7Y7V1a4…` — resolves to the mint. The
+NOTES record was right; the message dropped a `7` after the leading `7Y`. Any future
+reference uses the 44-character address.
+
+**These five addresses are the 2026-11-07 anchor set** (user-supplied launch window:
+2026-07-29 through 2026-09-19). They are the surviving record of the lost Phase 1a seeds,
+and they are the only anchor candidates the project has. Per-anchor on-chain verification
+(genesis, deployer, price path, first-20 buyers) is recorded in
+`docs/PHASE1B_ANCHORS.md`; the raw probe is `spikes/verify_anchors.py`.
+
 ---
 
 ## § PROCESS_FAILURES

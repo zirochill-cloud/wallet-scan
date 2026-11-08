@@ -276,13 +276,21 @@ def find_swap_instructions(result: dict) -> list[SwapInstruction]:
 
 
 def _mints_from_accounts(spec: ProgramSpec, accounts: list[str]) -> tuple[str | None, str | None]:
-    """Readable mint positions for the two layouts where they are pinned.
+    """Readable mint positions for the layouts where they are pinned.
 
-    PumpSwap: [3]=token mint, [4]=quote mint (verified live). Others: None —
-    the pipeline resolves mints from the pools registry instead of guessing.
+    PumpSwap: [3]=token mint, [4]=quote mint (verified live).
+    Pump.fun bonding curve: [1]=fee recipient, [2]=mint, [3]=bonding curve; the
+    quote is native SOL, so it is reported as the wSOL sentinel. Verified
+    2026-11-08 on GB68eE...: buy tx hkeSSJrW has accounts[2]=GB68eE and
+    postTokenBalances crediting the buyer at accounts[6] with that mint.
+    Previously every bonding-curve trade resolved to no mint and was skipped,
+    so the earliest buyers on a pump launch could not be attributed at all.
+    Others: None — the pipeline resolves mints from the pools registry.
     """
     if spec.dex == "pumpswap" and len(accounts) > 4:
         return accounts[3], accounts[4]
+    if spec.dex == "pump" and len(accounts) > 2:
+        return accounts[2], NATIVE_SENTINEL
     return None, None
 
 
