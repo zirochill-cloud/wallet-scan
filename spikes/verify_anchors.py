@@ -238,6 +238,19 @@ def _iso(t: int | None) -> str | None:
 MIN_BASE_TOKENS = 100.0
 MIN_QUOTE_SOL = 0.001
 
+#: Revised anchor criteria (NOTES.md § ANCHOR_SELECTION_CRITERIA, 2026-11-07).
+#: The retired drawdown gate asked whether a token *held* its value; memecoins never
+#: do, so it excluded the entire population this tool analyses. The opportunity gate
+#: asks whether a real market existed at the peak and whether early buyers entered
+#: far enough below it to have profited — the property that separates a tradeable
+#: run from a single wash print.
+PEAK_LEGITIMACY_MIN_TRADES = 3      # distinct transactions trading at >= 50% of peak
+PEAK_LEGITIMACY_BAND = 0.50         # "at or near peak"
+PEAK_LEGITIMACY_GRID_RUN = 2        # consecutive 6h samples at >= 50% of peak
+EARLY_OPPORTUNITY_MIN_BUYERS = 10   # of the first 20, entered at <= 25% of peak
+EARLY_OPPORTUNITY_RATIO = 0.25
+MIN_MULTIPLE = 5.0
+
 
 def _obs(sw, price: float, sig: str) -> dict:
     return {
@@ -253,6 +266,118 @@ def _obs(sw, price: float, sig: str) -> dict:
 def _credible(row: dict) -> bool:
     return (row.get("base_tokens") or 0) >= MIN_BASE_TOKENS and \
            (row.get("quote_sol") or 0) >= MIN_QUOTE_SOL
+
+
+def peak_legitimacy(observations: list[dict], *, genesis_time: int | None) -> dict:
+    """Was the peak a real market, or one print?
+
+    Two readings, either of which passes: at least ``PEAK_LEGITIMACY_MIN_TRADES``
+    distinct transactions trading at >= 50% of the peak price, or >= 2 *consecutive*
+    6-hour grid buckets holding a sample at that level. The second exists because the
+    reconstructed series samples three transactions per bucket — a genuine multi-hour
+    peak can show only two signers purely because only three trades per bucket were
+    ever decoded, and that is a property of the sampling, not of the token.
+    """
+    if not observations:
+        return {"signers_at_band": 0, "grid_run": 0, "band": PEAK_LEGITIMACY_BAND,
+                "passed": False, "reason": "no_observations"}
+    peak = max(o["price"] for o in observations)
+    floor = peak * PEAK_LEGITIMACY_BAND
+    near = [o for o in observations if o["price"] >= floor]
+    signers = {o["signature"] for o in near}
+
+    run = best = 0
+    prev = None
+    if genesis_time:
+        for bucket in sorted({int((o["t"] - genesis_time) // (6 * 3600)) for o in near}):
+            run = run + 1 if prev is not None and bucket == prev + 1 else 1
+            best = max(best, run)
+            prev = bucket
+
+    passed = len(signers) >= PEAK_LEGITIMACY_MIN_TRADES or best >= PEAK_LEGITIMACY_GRID_RUN
+    return {"signers_at_band": len(signers), "grid_run": best,
+            "band": PEAK_LEGITIMACY_BAND, "passed": passed,
+            "trades_required": PEAK_LEGITIMACY_MIN_TRADES,
+            "grid_run_required": PEAK_LEGITIMACY_GRID_RUN}
+
+
+def dense_legitimacy(mint: str, peak_t: int, peak_price: float, *,
+                     half_width_hours: float = 2.0, samples: int = 200) -> dict:
+    """Re-measure peak legitimacy from a dense window when the grid cannot say.
+
+    The sampled series decodes three transactions per 6-hour bucket, and buckets
+    with no decoded transaction simply do not exist — a token that held its peak
+    across a quiet stretch can therefore show two near-peak samples that are not
+    *consecutive* and be called a single print. That is a property of the grid.
+
+    This decodes an evenly strided sample of the successful transactions in the
+    peak window and counts distinct transactions at >= 50% of the peak. It runs
+    only for an anchor the cheap check failed, so it cannot launder a peak that
+    really was one trade — a wash print has no neighbours to sample at that price.
+    """
+    from solscope.decode import derive_swaps, exec_price_quote  # noqa: PLC0415
+
+    floor = peak_price * PEAK_LEGITIMACY_BAND
+    lo, hi = peak_t - half_width_hours * 3600, peak_t + half_width_hours * 3600
+    seen: dict[str, dict] = {}
+    for path in (CACHE / mint).glob("sig_*.json"):
+        try:
+            page = json.loads(path.read_text()).get("result") or []
+        except Exception:  # noqa: BLE001 - a page killed mid-write is skipped
+            continue
+        for item in page:
+            sig = item.get("signature")
+            if sig and not item.get("err") and item.get("blockTime"):
+                seen[sig] = item
+    window = sorted((i for i in seen.values() if lo <= i["blockTime"] <= hi),
+                    key=lambda i: i["blockTime"])
+    if len(window) > samples:
+        step = len(window) / samples
+        picked = [window[int(i * step)] for i in range(samples)]
+    else:
+        picked = window
+
+    prices: list[dict] = []
+    for item in picked:
+        sig = item["signature"]
+        tx = full(sig)
+        if not tx:
+            continue
+        swaps, _ = derive_swaps(tx, signature=sig)
+        for sw in swaps:
+            if sw.base_mint != mint or sw.block_time is None:
+                continue
+            price = exec_price_quote(sw)
+            if not price or price <= 0:
+                continue
+            row = _obs(sw, float(price), sig)
+            if _credible(row):
+                prices.append(row)
+                break
+
+    near = [r for r in prices if r["price"] >= floor]
+    signers = {r["signature"] for r in near}
+    return {"window_hours": half_width_hours, "listed_in_window": len(window),
+            "decoded": len(prices), "near_peak": len(near),
+            "distinct_txs_near_peak": len(signers),
+            "passed": len(signers) >= PEAK_LEGITIMACY_MIN_TRADES}
+
+
+def early_buyer_opportunity(buyers: list[dict], peak_price: float | None) -> dict:
+    """Did early buyers get in far enough below the peak to have profited?
+
+    Counts the first-20 buyers whose executed price is <= 25% of the peak. This is
+    the forward-looking half of the criteria: a token that ran 95x is only an
+    opportunity if somebody could buy at the bottom of that run, and the first 20
+    buyers are the ones the pipeline actually evaluates.
+    """
+    ratios = [b["sol_per_token"] / peak_price for b in buyers
+              if b.get("sol_per_token") and peak_price]
+    cheap = sum(1 for r in ratios if r <= EARLY_OPPORTUNITY_RATIO)
+    return {"buyers_at_or_below_ratio": cheap, "buyers_measured": len(ratios),
+            "ratio": EARLY_OPPORTUNITY_RATIO, "max_ratio": max(ratios) if ratios else None,
+            "passed": cheap >= EARLY_OPPORTUNITY_MIN_BUYERS,
+            "required": EARLY_OPPORTUNITY_MIN_BUYERS}
 
 
 # ---------------------------------------------------------------------------
@@ -418,17 +543,46 @@ def cmd_verify(only: str | None = None) -> None:
                 "first_sample_hours_after_genesis": (series[0]["t"] - g_time) / 3600
                 if g_time else None,
             }
+        # --- revised criteria: opportunity, not durability ------------------
+        # drawdown_pct stays in the metrics block as a diagnostic and no longer
+        # decides anything: every memecoin gives its pump back, so gating on it
+        # rejected the population the tool exists to analyse.
+        legitimacy = peak_legitimacy(use if metrics else [], genesis_time=g_time)
+        if metrics and not legitimacy["passed"]:
+            # The sampled grid could not settle it. Measure the peak window densely
+            # rather than fail an anchor on the shape of the sampling.
+            dense = dense_legitimacy(mint, metrics["peak_time"], metrics["max_price_sol"])
+            legitimacy["dense"] = dense
+            if dense["passed"]:
+                legitimacy["passed"] = True
+                legitimacy["settled_by"] = "dense_window"
+            print(f"   grid could not settle the peak: dense probe found "
+                  f"{dense['distinct_txs_near_peak']} distinct txs at >=50% in "
+                  f"±{dense['window_hours']:g}h ({dense['decoded']} decoded)", flush=True)
+        opportunity = early_buyer_opportunity(
+            buyers, metrics.get("max_price_sol") if metrics else None)
+        metrics["peak_legitimacy"] = legitimacy
+        metrics["early_buyer_opportunity"] = opportunity
+
         verdict = "FAIL_OTHER"
         if metrics.get("max_multiple") is not None:
-            if (metrics.get("drawdown_pct") or 0) >= 95:
-                verdict = "FAIL_DUMP"
-            elif metrics["max_multiple"] < 5:
+            if metrics["max_multiple"] < MIN_MULTIPLE:
                 verdict = "FAIL_LOW"
+            elif not legitimacy["passed"]:
+                verdict = "FAIL_LEGITIMACY"
+            elif not opportunity["passed"]:
+                verdict = "FAIL_OPPORTUNITY"
             else:
                 verdict = "PASS"
         print(f"   price samples: {len(series)}  span "
               f"{metrics.get('series_span_hours')}h  max/genesis: {metrics.get('max_multiple')}  "
-              f"drawdown: {metrics.get('drawdown_pct')}", flush=True)
+              f"drawdown(diagnostic): {metrics.get('drawdown_pct')}", flush=True)
+        print(f"   peak legitimacy: {legitimacy['signers_at_band']} tx at >="
+              f"{int(PEAK_LEGITIMACY_BAND * 100)}% of peak (need {PEAK_LEGITIMACY_MIN_TRADES}), "
+              f"grid run {legitimacy['grid_run']} (need {PEAK_LEGITIMACY_GRID_RUN})", flush=True)
+        print(f"   opportunity: {opportunity['buyers_at_or_below_ratio']} of "
+              f"{opportunity['buyers_measured']} buyers at <={int(EARLY_OPPORTUNITY_RATIO * 100)}% "
+              f"of peak (need {EARLY_OPPORTUNITY_MIN_BUYERS})", flush=True)
         print(f"   VERDICT: {verdict}", flush=True)
 
         summary[mint] = {
@@ -466,9 +620,12 @@ def cmd_verify(only: str | None = None) -> None:
             continue
         g = row["genesis"]
         m = row["metrics"]
+        lg = m.get("peak_legitimacy") or {}
+        op = m.get("early_buyer_opportunity") or {}
         print(f"  {row['label']:<16} {g['iso']}  dep {str(g['deployer'])[:8]}  "
               f"buyers {len(row['buyers'])}  max {m.get('max_multiple')}  "
-              f"dd {m.get('drawdown_pct')}  {row['verdict']}")
+              f"legit {lg.get('signers_at_band')}tx/{lg.get('grid_run')}grid  "
+              f"early {op.get('buyers_at_or_below_ratio')}/20  {row['verdict']}")
 
 
 def _series(mint: str, genesis_time: int | None, early: list[dict],

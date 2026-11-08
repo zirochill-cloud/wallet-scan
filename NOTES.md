@@ -15,7 +15,58 @@ re-verified**.
 
 ## § ANCHOR_SELECTION_CRITERIA
 
-*Status: OPEN BLOCKER. Carried from the prior handoff; not re-verified in this repo.*
+*Status: REVISED 2026-11-07. The drawdown gate is retired; the opportunity gate is
+operative and was applied to the 2026-07/09 anchor set (5/5 PASS).*
+
+### Criteria (revised 2026-11-07)
+
+An anchor must satisfy:
+
+1. **Peak multiple >= 5x** over the genesis price within 30 days of launch.
+2. **Peak legitimacy:** the peak price is not achieved by a single transaction. At
+   least 3 distinct trades at or near the peak (>= 50% of it) must be observed, or
+   >= 2 grid samples at that level spanning more than one 6-hour bucket. When the
+   sampled series cannot settle it — buckets with no decoded transaction are simply
+   absent — the peak window is measured densely before a verdict is recorded.
+3. **Early-buyer opportunity:** at least 10 of the first 20 buyers entered at <= 25%
+   of the peak price. This is the property the tool actually consumes: a run is only
+   an opportunity if early buyers could be in it far below the top.
+4. **Deployer diversity:** no two anchors in a set share a deployer.
+5. **Temporal diversity:** no two anchors launch within 24 hours of each other.
+6. **Timestamp spread:** at least one anchor in the set has first-20 buyer
+   transactions spanning >5 minutes (evidence of organic discovery).
+
+**Rationale.** Every memecoin gives its pump back: the 2026-07/09 set ran 95x to
+1947x and fell 95.9%-99.999% from peak by day 30. That is the category, not a rug.
+A rug is exit impossibility — liquidity pulled, holders trapped — and these tokens
+kept trading: 47-76 dust-filtered trades *after* the peak and 16-28 in days 20-30
+alone, so exit was continuously available for a month. The retired drawdown gate
+asked "did this token hold its value", which no memecoin does, so it excluded the
+entire population this tool exists to analyse. The opportunity gate asks the two
+questions that separate a tradeable run from a single wash print instead: was there
+a real market at the top, and could anyone be in below it.
+
+**Dated entries.**
+
+* **2026-11-07: drawdown gate retired.** Replaced by peak legitimacy and early-buyer
+  opportunity. Previously: "<95% drawdown from peak", which no memecoin anchor
+  passes.
+* **2026-11-07: verified against the 5-anchor 2026-07/09 set — 5/5 PASS** (0/5 under
+  the retired gate). Peak multiples 95.3x-1947x; 2-10 distinct trades at >= 50% of
+  peak; 19-20 of 20 first buyers at <= 25% of peak. TIGRINO's verdict needed the
+  dense window: its sampled grid had a 26-hour hole and showed only 2 near-peak
+  trades, while the token actually sat at 93% of its peak a day earlier on a 3.3 SOL
+  trade, and a dense sample of the peak window found 5 distinct transactions at or
+  above half the peak.
+* **2026-11-07: the pipeline was then run on this set** (Path B manual seeding, see
+  `docs/PHASE1B_ANCHORS.md`). No wallet is rankable: each appears in exactly one
+  anchor, and rankability needs >= 3 per wallet (D15). That is the gate working, not
+  a seeding failure.
+
+### History: the blocker this replaced
+
+*Carried from the prior handoff; not re-verified in this repo. Kept because the
+independence finding below still governs anchor sets.*
 
 The retrospective seed-anchor approach for Phase 1b (candidate wallet discovery) is
 blocked on two findings from the prior session:

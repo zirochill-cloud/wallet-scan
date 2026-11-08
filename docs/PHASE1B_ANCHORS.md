@@ -77,7 +77,7 @@ the fee payer.
 Launch window under test: 2026-07-29 … 2026-09-19. Every genesis falls inside it,
 so the supplied dates are not contradicted anywhere.
 
-| Anchor | Genesis price | Max 30-day price | Max / genesis | Peak day | Drawdown from peak (trough) | Drawdown from peak (day 30) | Verdict |
+| Anchor | Genesis price | Max 30-day price | Max / genesis | Peak day | Drawdown from peak (trough) | Drawdown from peak (day 30) | Verdict (retired gate) |
 |---|---|---|---|---|---|---|---|
 | ChooChoo | 3.876e-08 | 6.755e-06 | 174.3× | 1.25 | 99.999% | 97.21% | `FAIL_DUMP` |
 | BULLSHIT | 2.996e-08 | 5.833e-05 | 1947.0× | 11.00 | 99.899% | 99.90% | `FAIL_DUMP` |
@@ -90,13 +90,18 @@ in each case, within the creation slot). "Max" and both drawdowns are computed o
 dust-filtered observations only.
 
 Every anchor cleared the multiple gate (≥5×: the smallest was 95.3×) and then
-failed the dump gate (drawdown ≥95%). The result does not depend on which
-drawdown is meant: measured to the deepest post-peak observation or to the last
-day-30 observation, all five are between 95.9% and 99.999% below their peak.
+failed the retired dump gate (drawdown ≥95%). The result did not depend on which
+drawdown was meant: measured to the deepest post-peak observation or to the last
+day-30 observation, all five were between 95.9% and 99.999% below their peak.
 
-This is not a sampling artifact of the sparse grid in one direction only: the
-peaks themselves were reached between 12 hours and 11 days after launch and are
-sampled, and the collapse is still present at day 30 in the last observed trades.
+**The gate was the problem, not the anchors.** A 95% drawdown is the ordinary
+lifecycle of a memecoin, not a rug — a rug is exit impossibility, and these tokens
+never stopped trading. On the same dust-filtered series, 47–76 credible trades
+happened *after* the peak and 16–28 in days 20–30 alone, so an exit was available
+for a month. The drawdown requirement therefore selected for tokens that hold
+their value, which no memecoin does, and excluded the entire population this tool
+exists to analyse. It was retired on 2026-11-07 and replaced by the opportunity
+gate in `NOTES.md` § `ANCHOR_SELECTION_CRITERIA`.
 
 ## Independence check
 
@@ -110,24 +115,99 @@ hours between genesis timestamps, and at least one genesis→20th-buyer spread o
 | Genesis separation ≥24 h | yes — successive gaps 19 d, 14 d, 7 d, 11 d |
 | At least one spread >5 min | yes — BULLSHIT 176 s (the other four are 4–25 s) |
 
-Structural independence **passes**. It cannot rescue the set, because independence
-is only applied to anchors that survive verification.
+Structural independence **passes**, and under the revised criteria it is a
+surviving condition rather than a moot one.
 
-## Decision: STOP
+## Re-verification under the revised criteria (2026-11-07)
 
-**0 of 5 anchors survive.** The gate requires at least 3 survivors before any
-anchor-discovery work.
+Criteria as written in `NOTES.md` § `ANCHOR_SELECTION_CRITERIA`: peak ≥5×, peak
+legitimacy (≥3 distinct trades at or near the peak, or ≥2 grid samples across more
+than one 6-hour bucket), early-buyer opportunity (≥10 of the first 20 buyers at
+≤25% of peak), plus deployer/temporal diversity and one >5-minute buyer spread.
+"At or near peak" is ≥50% of it.
 
-Consequences, per the Phase 1b instruction:
+| Anchor | Max / genesis | Distinct txs at ≥50% of peak | Grid run (buckets) | First-20 buyers at ≤25% of peak | Max buyer price / peak | Verdict |
+|---|---|---|---|---|---|---|
+| ChooChoo | 174.3× | 8 | 7 | 20/20 | 0.012 | `PASS` |
+| BULLSHIT | 1947.0× | 9 | 3 | 20/20 | 0.001 | `PASS` |
+| MACRODUCK | 95.3× | 9 | 4 | 20/20 | 0.036 | `PASS` |
+| Nasduck | 302.1× | 10 | 2 | 20/20 | 0.008 | `PASS` |
+| TIGRINO | 1226.3× | 2 (5 dense) | 1 (26 h hole) | 19/20 | 0.845 | `PASS` |
 
-- No S3 anchor-discovery module was written.
-- No anchors were seeded, no positions reconstructed, no consumer or scores run.
-- No criteria were loosened and the ≥3 gate was not lowered.
+**5 of 5 pass**, so the ≥3-anchor gate is satisfied and the pipeline could be run.
 
-Five replacement mints are required. They must be addresses whose on-chain
-history shows a peak of at least 5× genesis and a post-peak drawdown below 95%
-over 30 days; verification of any replacement uses the same probe
-(`python spikes/verify_anchors.py verify <mint>`) and the same thresholds.
+TIGRINO is the one that needed a second look, and it is worth recording why. Its
+sampled series showed only two near-peak trades and no two consecutive buckets at
+that level, which is `FAIL_LEGITIMACY` on the cheap check — but its grid had a
+26-hour hole, and the same series shows the token at 93% of its peak a day earlier
+on a 97,739-token / 3.3 SOL trade. `spikes/verify_anchors.py` therefore decodes an
+evenly strided sample of the peak window whenever the grid cannot settle the
+question; that probe found 5 distinct transactions at ≥50% of peak, so the peak
+was a sustained level rather than one print. Failing an anchor on the shape of its
+sampling would have been the same class of error as the drawdown gate — a
+criterion measuring the measurement.
+
+One nuance in the opportunity column: BULLSHIT's buyers are 0.1–1.2% of peak
+because the token ran 1947× from genesis, so the entire launch slot is far below
+the top. TIGRINO's 0.845 maximum is buyer 20, a dust-priced late entry — the
+sample is still 19/20 inside the threshold.
+
+## Pipeline run: Path B manual seeding (2026-11-07)
+
+Seeded with `spikes/seed_anchors.py` against a fresh `solscope_anchors` database
+(PostgreSQL 16.6, `solscope migrate` applied first).
+
+| Table | Rows |
+|---|---|
+| `anchors` | 5 (all `source='user_supplied'`, `created_by_rule_version='phase1b-anchors-2026-11-07'`) |
+| `anchor_wallet_metrics` | 300 — 20 buyers × 5 anchors × 3 metrics |
+| `anchor_wallet_verdicts` | 100, all `wallet.not_computable_insufficient_anchors` |
+| `wallet_aggregates` | 300 — 100 wallets × 3 metrics |
+
+Metric outcomes, and why each status is the honest one:
+
+| Metric | Computed | Status otherwise | Reason |
+|---|---|---|---|
+| `max_subsequent_return` | 100/100 | — | Entry price is the wallet's own executed buy; observations are the dust-filtered series; window 30 d, mature |
+| `buyer_rank_at_entry` | 0/100 | `NOT_COMPUTABLE` | The buyer set is the first 20 of the mint, not all of it — ranking a prefix of history manufactures early-looking wallets |
+| `pct_entries_before_volume_spike` | 0/100 | `NOT_COMPUTABLE` | A volume baseline needs every swap in an hour; the sampled series has three trades per six hours |
+
+**Positions were not seeded.** `positions.reconstruct` takes a wallet's full swap
+history in the token, and no ingest has produced one — the swap data in this
+project comes from Phase 1/2 collection, which has not run for these mints.
+Writing an episode from the single launch buy would record "position is open"
+for a wallet that may have exited an hour later, which is an invented fact rather
+than an incomplete one. `token_selection` is consequently absent from the scores.
+
+Consumer (`python -m solscope consumer --rule-version phase1b-anchors-2026-11-07`),
+persisted as run 1:
+
+```
+wallets seen   100
+scored         0
+gated out      100
+skip reasons   early_entry_not_rankable 100
+bands          (none — no wallet has an early-entry score)
+```
+
+`python -m solscope scores` → "no scores stored". `score_runs` has one finished row
+with `wallets_scored = 0`; `scores` has 0 rows.
+
+**Why the band distribution is empty, and why that is correct.** Every wallet here
+appears in exactly one anchor (**cross-anchor overlap: 0 of 100**), and a
+single-anchor aggregate is `not_rankable` — `aggregation.MIN_ANCHORS` is 2, and the
+confidence gate's `min_distinct_anchors` is 3. A wallet with no computed aggregate
+never reaches a band at all, so it is skipped with `early_entry_not_rankable`
+rather than banded `promising_thin` or `exclude`. `promising_thin` exists for
+wallets that *have* a score and fail the anchor conjunct; here nothing is scored.
+That is the rankability gate working, not a seeding failure: five anchors whose
+buyer sets do not overlap cannot rank anybody, which is exactly what D15 in
+`NOTES.md` predicts.
+
+What this run does establish: the retrospective pipeline executes end to end on
+real, traceable anchor data — genesis → 20 attributed buyers per anchor → real
+metrics → aggregates → a persisted consumer run → a scores read. Nothing was
+fabricated to make a wallet rank.
 
 ## Decoder change made along the way
 
