@@ -778,14 +778,46 @@ def db_checks() -> bool:
         seed_anchor_metrics(conn, "WalletD", "D", 3, {MR: 3, BR: 3, PV: 3})
         store(conn, "WalletE", [4, 4, 4], [0.02, 0.02, 0.02], [0.5, 0.5, 0.5])
         seed_anchor_metrics(conn, "WalletE", "E", 3, {MR: 3, BR: 3, PV: 3})
+
+        # WalletF has everything a scored wallet needs — three computed aggregates on
+        # three anchors — and one thing it must not survive: a quality-filter
+        # rejection. If the filter's decision does not bind here, it does not bind
+        # anywhere, and every verdict it records is decoration.
+        from solscope.anchor_writer import write_verdict
+        from solscope.quality_filter import RuleId, WalletVerdict
+
+        store(conn, "WalletF", [4, 4, 4], [0.02, 0.02, 0.02], [0.5, 0.5, 0.5])
+        seed_anchor_metrics(conn, "WalletF", "F", 3, {MR: 3, BR: 3, PV: 3})
+        f_anchor = int(
+            conn.execute("SELECT anchor_id FROM anchors WHERE mint='F-mint-0'").fetchone()[0]
+        )
+        write_verdict(
+            conn, anchor_id=f_anchor, wallet="WalletF",
+            verdict=WalletVerdict.REJECT_SANDWICH, rule_id=RuleId.SANDWICH,
+            rule_version="quality_screen/v1",
+            evidence={"quick_round_trips": 3, "max_seconds": 90},
+        )
         seed_positions(conn)
         seed_gate_wallet(conn)
 
         report = run_consumer(
             conn, rule_version=RULE, as_of=AS_OF, window_start=WINDOW_START, window_end=AS_OF
         )
-        check("five wallets seen, four scored", (report.wallets_seen, report.wallets_scored) == (5, 4),
+        check("six wallets seen, four scored",
+              (report.wallets_seen, report.wallets_scored) == (6, 4),
               f"{report.wallets_seen}/{report.wallets_scored}")
+        check("the filter-rejected wallet never reaches a score",
+              report.skipped.get("WalletF") == "quality_filter:wallet.reject_sandwich",
+              f"{report.skipped.get('WalletF')}")
+        check("the rejection is reported apart from the measurement gaps",
+              report.filter_rejected == {"WalletF": "wallet.reject_sandwich"},
+              f"{report.filter_rejected}")
+        check("the rejected wallet has no scores row",
+              conn.execute("SELECT count(*) FROM scores WHERE address='WalletF'").fetchone()[0] == 0)
+        check("the rejected wallet has no sub_scores row",
+              conn.execute(
+                  "SELECT count(*) FROM sub_scores s JOIN scores sc ON sc.id = s.score_id "
+                  "WHERE sc.address = 'WalletF'").fetchone()[0] == 0)
         check("wallet C is skipped with its reason",
               report.skipped.get("WalletC") == "early_entry_not_rankable", f"{report.skipped}")
         check("four scores rows", count(conn, "scores") == 4,
@@ -1054,11 +1086,15 @@ def db_checks() -> bool:
               count(conn, "scores") == scores_before,
               f"{scores_before} -> {count(conn, 'scores')}")
         # By this point in the suite two wallets have been pruned by a later run, so
-        # the aggregate set is 4 wallets / 3 scorable — the same counts `scores`
-        # just listed above.
+        # the aggregate set is 5 wallets / 3 scorable — the same counts `scores`
+        # just listed above. WalletF is gathered but gated out by the quality filter,
+        # so it counts in "seen" and in "gated out", never in "scored".
         check("the summary counts gathered wallets and their bands",
-              "wallets seen   4" in dry_text and "scored         3" in dry_text
-              and "gated out      1" in dry_text, dry_text)
+              "wallets seen   5" in dry_text and "scored         3" in dry_text
+              and "gated out      2" in dry_text, dry_text)
+        check("the summary names the filter separately from the measurement gaps",
+              "filter rejects 1" in dry_text
+              and "quality_filter:wallet.reject_sandwich 1" in dry_text, dry_text)
         check("it prints a band for every name, including zeros",
               all(band in dry_text for band in
                   ("track", "watch", "investigate", "promising_thin", "exclude")),

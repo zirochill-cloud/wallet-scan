@@ -1,8 +1,16 @@
-"""Phase 1b wallet quality filter — genesis-burst rule, verdicts, reason codes.
+"""Phase 1b wallet quality filter — four rules, verdicts, reason codes.
 
-**The genesis-burst rule and the anchor-set preconditions are implemented** and
-calibrated against synthetic bundled/clean sets (``tests/test_phase1b_filter.py``);
-**the three prior heuristics are not** — see ``NOT_PORTED_HEURISTICS``.
+**All four rules are implemented**: ``genesis_burst`` (cross-anchor), ``sandwich``,
+``throughput`` and ``router_only``, plus :func:`screen_wallet` which applies them in
+that order and returns one verdict. They are calibrated against synthetic
+bundled/clean sets (``tests/test_phase1b_filter.py``); their thresholds are **not
+validated** — see ``SCREEN_DEFAULTS_VALIDATED``.
+
+Why the filter exists at all, and why it is now the precondition for anchor
+overlap: ranking needs ≥3 anchors per wallet, which means anchor sets must overlap
+in their buyer sets. Overlap alone floods ``track`` with bot wallets that are early
+in everything because they are automated. The filter is what makes an overlapping
+anchor set produce a ranking of traders rather than of bots.
 
 Built fresh: no filter code survived from the prior session
 (docs/PHASE1A_RECOVERY.md §3). What survives is one measurement — **44 of 45 wallets
@@ -40,13 +48,27 @@ which rule had admitted them, on what measured values, under which thresholds. T
 codes below exist so that question is always answerable, and so that a *rejection
 rate* is measurable on both a known-bundled set and a known-clean one.
 
-## What is deliberately NOT here
+## The three per-wallet heuristics
 
-The prior filter's three heuristics — ``sandwich``, ``throughput``, ``router_only`` —
-are **not implemented and have no codes**. They were never tested, and the filter they
-belonged to admitted 44 of 45. Giving them enum members would imply they work. They
-are listed in ``NOT_PORTED_HEURISTICS`` so the omission is visible rather than
-mistaken for an oversight, and so they cannot be silently reintroduced.
+``sandwich``, ``throughput`` and ``router_only`` were the prior session's untested
+heuristics. They are implemented here for the first time, with their own reason codes
+and their own calibration, and they are deliberately *not* trusted as
+bundle detectors: sandwiching and high-frequency routing describe automation, and
+automation is not the same thing as a coordinated cluster. They fire on evidence a
+human can recheck — round-trip duration, swaps per day, aggregator share — and their
+thresholds are guesses (``SCREEN_DEFAULTS_VALIDATED`` is False).
+
+## Precedence
+
+``screen_wallet`` applies the rules in a fixed order and stops at the first hit:
+
+    genesis_burst  ->  [swap sufficiency]  ->  sandwich  ->  throughput  ->  router_only
+
+A *rejection* always outranks *not computable*: proven bundle evidence must not be
+masked by a different rule lacking data. Swap-derived rules come after the
+sufficiency check because "fewer than three swaps" cannot clear or trip a
+throughput rule — that wallet is ``NOT_COMPUTABLE_INSUFFICIENT_SWAPS``, never
+``ACCEPTED``.
 """
 from __future__ import annotations
 
@@ -67,8 +89,23 @@ __all__ = [
     "GENESIS_BURST_MIN_ANCHORS",
     "GENESIS_BURST_MAX_SECONDS",
     "GENESIS_BURST_DEFAULTS_VALIDATED",
-    "NOT_PORTED_HEURISTICS",
+    "MIN_SWAPS_TO_SCREEN",
+    "SANDWICH_MAX_SECONDS",
+    "SANDWICH_MIN_ROUND_TRIPS",
+    "THROUGHPUT_MAX_SWAPS_PER_DAY",
+    "ROUTER_ONLY_MIN_AGGREGATOR_FRACTION",
+    "SCREEN_DEFAULTS_VALIDATED",
+    "SCREEN_RULE_VERSION",
+    "DEFAULT_SCREEN_CONFIG",
+    "ROUND_TRIP",
+    "RoundTrip",
+    "SwapObservation",
     "FilterVerdict",
+    "genesis_burst",
+    "sandwich",
+    "throughput",
+    "router_only",
+    "screen_wallet",
     "evaluate_anchor_set",
     "evaluate_wallet",
 ]
@@ -91,9 +128,50 @@ GENESIS_BURST_MAX_SECONDS: int = 60
 #: known-bundled set AND a false-positive rate on a known-clean set.
 GENESIS_BURST_DEFAULTS_VALIDATED: bool = False
 
-#: Heuristics from the prior session that are NOT ported. Present so the omission is
-#: deliberate and visible; they have no codes and no rules.
-NOT_PORTED_HEURISTICS: tuple[str, ...] = ("sandwich", "throughput", "router_only")
+#: Heuristics from the prior session that are still not ported. Empty since
+#: 2026-11-08, when all three were implemented; the name is kept so that removing it
+#: is a deliberate edit rather than a silent regression in coverage.
+NOT_PORTED_HEURISTICS: tuple[str, ...] = ()
+
+# --- the three per-wallet heuristics --------------------------------------
+
+#: Round trips shorter than this are a sandwich signature, not a position.
+#: **A guess** — see NOTES.md § QUALITY_FILTER_IMPLEMENTED.
+SANDWICH_MAX_SECONDS: int = 90
+
+#: How many such round trips, in different mints, make a sandwich wallet.
+SANDWICH_MIN_ROUND_TRIPS: int = 2
+
+#: Swaps per day above which a wallet is treated as infrastructure rather than a
+#: participant. **A guess.**
+THROUGHPUT_MAX_SWAPS_PER_DAY: int = 200
+
+#: Share of swaps that must be aggregator-routed (Jupiter, OKX, dFlow) before
+#: ``router_only`` can fire. **A guess.**
+ROUTER_ONLY_MIN_AGGREGATOR_FRACTION: float = 0.95
+
+#: Fewer swaps than this and the swap-derived rules cannot decide anything: the
+#: wallet is ``NOT_COMPUTABLE_INSUFFICIENT_SWAPS``, not accepted.
+MIN_SWAPS_TO_SCREEN: int = 3
+
+#: Explicitly false, and for a reason: the calibration sets are synthetic. Flipping
+#: this requires real bundled AND real clean wallets.
+SCREEN_DEFAULTS_VALIDATED: bool = False
+
+#: A round trip at or below this duration is a *quick* one for ``sandwich``.
+ROUND_TRIP = "round_trip"
+
+#: Default thresholds in one mapping, so a caller can override one key without
+#: restating the rest. ``screen_wallet(config=...)`` merges over this.
+DEFAULT_SCREEN_CONFIG: dict[str, object] = {
+    "genesis_burst_min_anchors": GENESIS_BURST_MIN_ANCHORS,
+    "genesis_burst_max_seconds": GENESIS_BURST_MAX_SECONDS,
+    "sandwich_max_seconds": SANDWICH_MAX_SECONDS,
+    "sandwich_min_round_trips": SANDWICH_MIN_ROUND_TRIPS,
+    "throughput_max_swaps_per_day": THROUGHPUT_MAX_SWAPS_PER_DAY,
+    "router_only_min_aggregator_fraction": ROUTER_ONLY_MIN_AGGREGATOR_FRACTION,
+    "min_swaps_to_screen": MIN_SWAPS_TO_SCREEN,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -136,12 +214,21 @@ class AnchorSetViolation(str, Enum):
 class RuleId(str, Enum):
     """Identifiers for rules that fired. Carried on every verdict so it is auditable.
 
-    Only implemented rules appear here. ``sandwich``/``throughput``/``router_only``
-    are absent on purpose — see ``NOT_PORTED_HEURISTICS``.
+    Only implemented rules appear here, which since 2026-11-08 means all four.
     """
 
     #: Wallet was within N seconds of genesis for at least N anchors.
     GENESIS_BURST = "rule.genesis_burst"
+
+    #: Two or more round trips of at most ``SANDWICH_MAX_SECONDS`` in different mints.
+    SANDWICH = "rule.sandwich"
+
+    #: Mean swap rate above ``THROUGHPUT_MAX_SWAPS_PER_DAY``.
+    THROUGHPUT = "rule.throughput"
+
+    #: More than ``ROUTER_ONLY_MIN_AGGREGATOR_FRACTION`` of swaps aggregator-routed
+    #: with no direct pool interaction.
+    ROUTER_ONLY = "rule.router_only"
 
 
 # ---------------------------------------------------------------------------
@@ -181,6 +268,19 @@ class WalletVerdict(str, Enum):
     #: The anchor's genesis time is unknown, so the burst delta is undefined.
     NOT_COMPUTABLE_NO_GENESIS = "wallet.not_computable_no_genesis"
 
+    #: Fewer than ``MIN_SWAPS_TO_SCREEN`` swaps observed: the swap-derived rules can
+    #: neither fire nor clear, so the wallet is unscreened rather than clean.
+    NOT_COMPUTABLE_INSUFFICIENT_SWAPS = "wallet.not_computable_insufficient_swaps"
+
+    #: Two or more ≤90s round trips across different mints (sandwich signature).
+    REJECT_SANDWICH = "wallet.reject_sandwich"
+
+    #: Swap rate above the throughput ceiling — infrastructure, not a trader.
+    REJECT_THROUGHPUT = "wallet.reject_throughput"
+
+    #: Aggregator-routed only, with no direct pool interaction (router/bot traffic).
+    REJECT_ROUTER_ONLY = "wallet.reject_router_only"
+
 
 # ---------------------------------------------------------------------------
 # Output contract
@@ -216,7 +316,7 @@ class FilterVerdict:
 
     def is_rejection(self) -> bool:
         """True only for a rule-driven rejection — not for "not computable"."""
-        return self.verdict is WalletVerdict.REJECT_GENESIS_BURST
+        return self.verdict.value.startswith("wallet.reject")
 
     def is_computable(self) -> bool:
         """False when the evidence was insufficient to decide either way."""
@@ -444,4 +544,368 @@ def evaluate_wallet(
             measured={**measured, "anchor_delta_seconds": deltas.get(mint)},
         )
         for mint in per_anchor
+    )
+
+
+# ---------------------------------------------------------------------------
+# Inputs to the per-wallet heuristics
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class RoundTrip:
+    """One position episode reduced to what ``sandwich`` needs.
+
+    ``positions.Episode`` is the real source; this is its projection, so the rule
+    does not depend on the reconstruction module and can be tested without one. A
+    still-open episode has no ``closed_at`` and is not a round trip: a sandwich
+    exists only when the wallet got out again.
+    """
+
+    mint: str
+    opened_at: _dt.datetime | None
+    closed_at: _dt.datetime | None
+
+    @property
+    def hold_seconds(self) -> float | None:
+        """Seconds held, or None for an open / undated episode."""
+        if self.opened_at is None or self.closed_at is None:
+            return None
+        return (self.closed_at - self.opened_at).total_seconds()
+
+
+@dataclass(frozen=True)
+class SwapObservation:
+    """One swap reduced to routing evidence.
+
+    ``aggregator`` names the router that carried it (``jupiter``, ``okx``,
+    ``dflow``, ...). ``pool`` names the pool traded against directly. ``direct_pool``
+    is explicit for callers that know the swap hit a pool without naming it; when
+    omitted it is inferred as "a pool is named and no aggregator carried it".
+    """
+
+    at: _dt.datetime
+    aggregator: str | None = None
+    pool: str | None = None
+    direct_pool: bool | None = None
+
+    @property
+    def hit_pool_directly(self) -> bool:
+        if self.direct_pool is not None:
+            return bool(self.direct_pool)
+        return self.aggregator is None and self.pool is not None
+
+
+def round_trips(positions: Sequence[object]) -> list[RoundTrip]:
+    """Project position episodes (or already-built ``RoundTrip``s) for the rules.
+
+    Accepts anything with ``mint`` / ``opened_at`` / ``closed_at`` attributes, which
+    includes ``positions.Episode`` without importing it.
+    """
+    out: list[RoundTrip] = []
+    for p in positions:
+        if isinstance(p, RoundTrip):
+            out.append(p)
+            continue
+        out.append(
+            RoundTrip(
+                mint=getattr(p, "mint", ""),
+                opened_at=getattr(p, "opened_at", None),
+                closed_at=getattr(p, "closed_at", None),
+            )
+        )
+    return out
+
+
+# ---------------------------------------------------------------------------
+# The three per-wallet heuristics
+# ---------------------------------------------------------------------------
+
+
+def sandwich(
+    wallet: str,
+    positions: Sequence[object],
+    *,
+    min_round_trips: int = SANDWICH_MIN_ROUND_TRIPS,
+    max_seconds: int = SANDWICH_MAX_SECONDS,
+) -> bool:
+    """``>= min_round_trips`` round trips of at most ``max_seconds``, in different mints.
+
+    A sandwich is a buy and a sell inside one block or two — the wallet extracts the
+    spread it created and never holds a position. The *different mints* requirement
+    is what separates that from a single scalped trade, which is ordinary behaviour:
+    one fast flip says nothing, several across unrelated tokens says the wallet does
+    it as a strategy.
+
+    ``wallet`` is accepted so every rule in this module has the same call shape; the
+    rule is a pure function of the positions.
+    """
+    quick = [
+        t for t in round_trips(positions)
+        if t.hold_seconds is not None and t.hold_seconds <= max_seconds
+    ]
+    mints = {t.mint for t in quick}
+    return len(quick) >= min_round_trips and len(mints) >= 2
+
+
+def throughput(
+    wallet: str,
+    swaps: Sequence[SwapObservation],
+    *,
+    max_swaps_per_day: int = THROUGHPUT_MAX_SWAPS_PER_DAY,
+    min_swaps: int = MIN_SWAPS_TO_SCREEN,
+) -> bool:
+    """Mean swap rate above ``max_swaps_per_day`` over the observed window.
+
+    The window is the span between the wallet's first and last swap, floored at one
+    minute: dividing a burst of swaps by a zero-second window would report an
+    infinite rate for a wallet that simply traded twice in the same slot.
+
+    Fewer than ``min_swaps`` observations returns False — the unscreened case is
+    represented by the verdict, not by this predicate, so caller code cannot mistake
+    "not enough data" for "clean".
+    """
+    if len(swaps) < min_swaps:
+        return False
+    times = sorted(s.at for s in swaps)
+    span_seconds = max(60.0, (times[-1] - times[0]).total_seconds())
+    return (len(swaps) / span_seconds) * 86400 > max_swaps_per_day
+
+
+def router_only(
+    wallet: str,
+    swaps: Sequence[SwapObservation],
+    *,
+    min_fraction: float = ROUTER_ONLY_MIN_AGGREGATOR_FRACTION,
+    min_swaps: int = MIN_SWAPS_TO_SCREEN,
+) -> bool:
+    """More than ``min_fraction`` of swaps aggregator-routed, none hitting a pool directly.
+
+    Routing everything through Jupiter/OKX/dFlow and never touching a pool directly
+    is the shape of an integration or a bot, not of a wallet choosing trades. Both
+    halves are required: a high aggregator share with even one direct pool swap is
+    ordinary retail behaviour in 2026.
+    """
+    if len(swaps) < min_swaps:
+        return False
+    routed = sum(1 for s in swaps if s.aggregator)
+    direct = sum(1 for s in swaps if s.hit_pool_directly)
+    if direct:
+        return False
+    return routed / len(swaps) > min_fraction
+
+
+def genesis_burst(
+    wallet: str,
+    anchors: Mapping[str, AnchorObservation],
+    *,
+    entries: Sequence[WalletAnchorEntry],
+    buyer_set_complete: bool = True,
+    min_anchors: int = GENESIS_BURST_MIN_ANCHORS,
+    max_seconds: int = GENESIS_BURST_MAX_SECONDS,
+) -> bool:
+    """True when the burst rule fires — a thin wrapper over :func:`evaluate_wallet`.
+
+    The rule itself lives in ``evaluate_wallet`` because it produces per-anchor
+    verdicts; this exists so ``screen_wallet`` can ask the question in one line and
+    so the three heuristics share a call shape. ``buyer_set_complete=False`` yields
+    False: an incomplete buyer set is not computable, not a rejection.
+    """
+    verdicts = evaluate_wallet(
+        wallet=wallet,
+        entries=entries,
+        anchors=anchors,
+        buyer_set_complete=buyer_set_complete,
+        min_anchors=min_anchors,
+        max_seconds=max_seconds,
+    )
+    return bool(verdicts) and verdicts[0].verdict is WalletVerdict.REJECT_GENESIS_BURST
+
+
+# ---------------------------------------------------------------------------
+# screen_wallet — the four rules, in order, one verdict
+# ---------------------------------------------------------------------------
+
+#: Version carried by :func:`screen_wallet` verdicts. Separate from ``RULE_VERSION``
+#: (the genesis-burst-only version) so that adding three rules did not relabel every
+#: existing burst verdict as having been screened by four.
+SCREEN_RULE_VERSION = "quality_screen/v1"
+
+
+def screen_wallet(
+    wallet: str,
+    anchors: Mapping[str, AnchorObservation],
+    positions: Sequence[object] = (),
+    swaps: Sequence[SwapObservation] = (),
+    config: Mapping[str, object] | None = None,
+    *,
+    entries: Sequence[WalletAnchorEntry] | None = None,
+    buyer_set_complete: bool = True,
+    anchor_set_id: str = "",
+    rule_version: str = SCREEN_RULE_VERSION,
+) -> FilterVerdict:
+    """Apply the four rules to one wallet and return a single verdict.
+
+    Order, first hit wins (see the module docstring): ``genesis_burst``, swap
+    sufficiency, ``sandwich``, ``throughput``, ``router_only``.
+
+    ``entries`` is the wallet's anchor history; when it is omitted it is derived from
+    ``positions`` — each episode's mint and open time — which is exactly the
+    anchor→wallet edge the burst rule compares against each anchor's genesis.
+
+    Outcomes are three-way, and the difference is load-bearing:
+
+    * ``ACCEPTED`` — every rule that could be evaluated was, and none fired.
+    * ``REJECT_*`` — a named rule fired, with the numbers in ``measured``.
+    * ``NOT_COMPUTABLE_*`` — the evidence needed was absent. This is **not** a clean
+      bill: with fewer than ``min_swaps_to_screen`` swaps the wallet has not been
+      screened at all.
+
+    ``config`` merges over ``DEFAULT_SCREEN_CONFIG``; keys name the rule they tune.
+    ``SCREEN_DEFAULTS_VALIDATED`` is False, so a verdict here applies unvalidated
+    thresholds — which is why ``rule_version`` travels on every row.
+    """
+    cfg: dict[str, object] = {**DEFAULT_SCREEN_CONFIG, **dict(config or {})}
+    trips = round_trips(positions)
+    if entries is None:
+        entries = [
+            WalletAnchorEntry(anchor_mint=t.mint, first_buy_at=t.opened_at)
+            for t in trips
+            if t.opened_at is not None
+        ]
+
+    measured: dict[str, object] = {
+        "config": dict(cfg),
+        "thresholds_validated": SCREEN_DEFAULTS_VALIDATED,
+        "anchors_observed": len(entries),
+        "swaps_observed": len(swaps),
+        "positions_observed": len(trips),
+    }
+
+    # 1. genesis burst — cross-anchor, so it is the one rule that needs the anchors.
+    burst_verdicts = evaluate_wallet(
+        wallet=wallet,
+        entries=entries,
+        anchors=anchors,
+        buyer_set_complete=buyer_set_complete,
+        anchor_set_id=anchor_set_id,
+        rule_version=rule_version,
+        min_anchors=int(cfg["genesis_burst_min_anchors"]),
+        max_seconds=int(cfg["genesis_burst_max_seconds"]),
+    )
+    if burst_verdicts and burst_verdicts[0].verdict is WalletVerdict.REJECT_GENESIS_BURST:
+        return FilterVerdict(
+            wallet=wallet,
+            anchor_mint=burst_verdicts[0].anchor_mint,
+            verdict=WalletVerdict.REJECT_GENESIS_BURST,
+            anchor_set_id=anchor_set_id,
+            rule_version=rule_version,
+            rule_id=RuleId.GENESIS_BURST,
+            measured={**measured, **burst_verdicts[0].measured},
+            notes=("rejected before the swap rules ran",),
+        )
+
+    # 2. sufficiency — a wallet we cannot screen is not a wallet we cleared.
+    min_swaps = int(cfg["min_swaps_to_screen"])
+    if len(swaps) < min_swaps:
+        return FilterVerdict(
+            wallet=wallet,
+            anchor_mint="",
+            verdict=WalletVerdict.NOT_COMPUTABLE_INSUFFICIENT_SWAPS,
+            anchor_set_id=anchor_set_id,
+            rule_version=rule_version,
+            measured={**measured, "min_swaps_to_screen": min_swaps},
+            notes=(
+                f"{len(swaps)} swap(s) observed; a throughput or router rule cannot "
+                f"clear or trip on fewer than {min_swaps}",
+            ),
+        )
+
+    # 3-5. the per-wallet heuristics, in order.
+    quick = [
+        t for t in trips
+        if t.hold_seconds is not None
+        and t.hold_seconds <= int(cfg["sandwich_max_seconds"])
+    ]
+    if sandwich(
+        wallet,
+        positions,
+        min_round_trips=int(cfg["sandwich_min_round_trips"]),
+        max_seconds=int(cfg["sandwich_max_seconds"]),
+    ):
+        return FilterVerdict(
+            wallet=wallet,
+            anchor_mint="",
+            verdict=WalletVerdict.REJECT_SANDWICH,
+            anchor_set_id=anchor_set_id,
+            rule_version=rule_version,
+            rule_id=RuleId.SANDWICH,
+            measured={
+                **measured,
+                "quick_round_trips": len(quick),
+                "quick_mints": sorted({t.mint for t in quick}),
+                "min_round_trips": cfg["sandwich_min_round_trips"],
+                "max_seconds": cfg["sandwich_max_seconds"],
+            },
+        )
+
+    if throughput(
+        wallet,
+        swaps,
+        max_swaps_per_day=int(cfg["throughput_max_swaps_per_day"]),
+        min_swaps=min_swaps,
+    ):
+        times = sorted(s.at for s in swaps)
+        span = max(60.0, (times[-1] - times[0]).total_seconds())
+        return FilterVerdict(
+            wallet=wallet,
+            anchor_mint="",
+            verdict=WalletVerdict.REJECT_THROUGHPUT,
+            anchor_set_id=anchor_set_id,
+            rule_version=rule_version,
+            rule_id=RuleId.THROUGHPUT,
+            measured={
+                **measured,
+                "swaps_per_day": round((len(swaps) / span) * 86400, 2),
+                "span_days": round(span / 86400, 4),
+                "max_swaps_per_day": cfg["throughput_max_swaps_per_day"],
+            },
+        )
+
+    routed = sum(1 for s in swaps if s.aggregator)
+    direct = sum(1 for s in swaps if s.hit_pool_directly)
+    if router_only(
+        wallet,
+        swaps,
+        min_fraction=float(cfg["router_only_min_aggregator_fraction"]),
+        min_swaps=min_swaps,
+    ):
+        return FilterVerdict(
+            wallet=wallet,
+            anchor_mint="",
+            verdict=WalletVerdict.REJECT_ROUTER_ONLY,
+            anchor_set_id=anchor_set_id,
+            rule_version=rule_version,
+            rule_id=RuleId.ROUTER_ONLY,
+            measured={
+                **measured,
+                "aggregator_fraction": round(routed / len(swaps), 4),
+                "direct_pool_swaps": direct,
+                "min_fraction": cfg["router_only_min_aggregator_fraction"],
+            },
+        )
+
+    return FilterVerdict(
+        wallet=wallet,
+        anchor_mint="",
+        verdict=WalletVerdict.ACCEPTED,
+        anchor_set_id=anchor_set_id,
+        rule_version=rule_version,
+        measured={
+            **measured,
+            "aggregator_fraction": round(routed / len(swaps), 4),
+            "direct_pool_swaps": direct,
+            "quick_round_trips": len(quick),
+        },
+        notes=("all four rules evaluated; none fired",),
     )

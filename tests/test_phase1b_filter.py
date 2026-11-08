@@ -45,10 +45,15 @@ from solscope.metrics import BuyerFirstSeen  # noqa: E402
 from solscope.quality_filter import (  # noqa: E402
     AnchorObservation,
     AnchorSetViolation,
+    RoundTrip,
+    SwapObservation,
     WalletAnchorEntry,
     WalletVerdict,
     evaluate_anchor_set,
     evaluate_wallet,
+    router_only,
+    sandwich,
+    screen_wallet,
 )
 
 H = dt.timedelta(hours=1)
@@ -260,6 +265,129 @@ def main() -> int:
     v = evaluate_anchor_set(good)
     check("an independent, well-spread set has no violations",
           v == tuple(), f"got {[x.value for x in v]}")
+
+    # --- screen_wallet: all four rules over the same labelled sets --------
+    print("\n[calibration — screen_wallet (four rules)]")
+
+    def organic_swaps(i: int, count: int = 40) -> list[SwapObservation]:
+        """`count` swaps over 30 days, 60% aggregator-routed and 40% direct.
+
+        Deliberately below both swap thresholds: ~1.3 swaps/day against a 200/day
+        ceiling, and 0.60 aggregator share against a 0.95 floor.
+        """
+        base = T0 + dt.timedelta(hours=i)
+        step = dt.timedelta(days=30) / count
+        return [
+            SwapObservation(
+                at=base + step * k,
+                aggregator="jupiter" if k % 5 < 3 else None,
+                pool=None if k % 5 < 3 else "pump-amm",
+            )
+            for k in range(count)
+        ]
+
+    def organic_positions(i: int) -> list[RoundTrip]:
+        """Two multi-day holds — positions, not sandwiches."""
+        start = T0 + dt.timedelta(days=i % 7)
+        return [
+            RoundTrip("A4", start, start + dt.timedelta(days=2)),
+            RoundTrip("A7", start + dt.timedelta(days=3), start + dt.timedelta(days=6)),
+        ]
+
+    def screen_rates(mints: dict[str, list[str]], delay_fn, label: str,
+                     *, swaps_fn=organic_swaps, positions_fn=organic_positions):
+        rejected = accepted = not_computable = 0
+        for wallet, mints_w in mints.items():
+            i = int(wallet[1:])
+            row = screen_wallet(
+                wallet,
+                ANCHORS,
+                positions_fn(i),
+                swaps_fn(i),
+                entries=entries_for(wallet, mints_w, delay_fn) if mints_w else [],
+                anchor_set_id="synthetic-2026-10-28",
+            )
+            if row.is_rejection():
+                rejected += 1
+            elif row.verdict is WalletVerdict.ACCEPTED:
+                accepted += 1
+            else:
+                not_computable += 1
+        total = rejected + accepted + not_computable
+        print(
+            f"  {label}: {total} wallets — rejected {rejected} "
+            f"({rejected/total:.0%}), accepted {accepted}, "
+            f"not_computable {not_computable}"
+        )
+        return {"rejected": rejected, "accepted": accepted,
+                "not_computable": not_computable, "total": total}
+
+    sb = screen_rates(BUNDLED_MINTS, burst_delay, "bundled")
+    check("screen_wallet bundled rejection >= 90%",
+          sb["rejected"] / sb["total"] >= 0.90,
+          f"got {sb['rejected']/sb['total']:.0%}")
+
+    sc = screen_rates(CLEAN_MINTS, late_delay, "clean  ")
+    check("screen_wallet clean false-positive <= 10%",
+          sc["rejected"] / sc["total"] <= 0.10,
+          f"got {sc['rejected']/sc['total']:.0%}")
+    check("screen_wallet clean set is accepted, not merely un-rejected",
+          sc["accepted"] == sc["total"], f"got {sc['accepted']} of {sc['total']}")
+
+    # --- each heuristic fires on its own signature -----------------------
+    print("\n[the three heuristics]")
+
+    no_swaps = screen_wallet("B00", ANCHORS, [], [],
+                             entries=entries_for("B00", ["A1", "A2", "A3"], burst_delay))
+    check("genesis burst outranks missing swap data",
+          no_swaps.verdict is WalletVerdict.REJECT_GENESIS_BURST,
+          f"got {no_swaps.verdict.value}")
+
+    quick = [RoundTrip(m, T0, T0 + dt.timedelta(seconds=30))
+             for m in ("A1", "A2", "A3")]
+    row = screen_wallet("C00", ANCHORS, quick, organic_swaps(0),
+                        entries=entries_for("C00", ["A4"], late_delay))
+    check("sandwich fires on 3 x 30s round trips in different mints",
+          row.verdict is WalletVerdict.REJECT_SANDWICH, f"got {row.verdict.value}")
+    check("sandwich evidence carries the quick trips",
+          row.measured.get("quick_round_trips") == 3, f"got {row.measured}")
+    check("sandwich needs different mints, not just quick trips",
+          not sandwich("C00", [RoundTrip("A1", T0, T0 + dt.timedelta(seconds=30))] * 3))
+
+    fast = [SwapObservation(at=T0 + dt.timedelta(minutes=3 * k),
+                            aggregator=None, pool="pump-amm") for k in range(500)]
+    row = screen_wallet("C01", ANCHORS, organic_positions(1), fast,
+                        entries=entries_for("C01", ["A4"], late_delay))
+    check("throughput fires above 200 swaps/day",
+          row.verdict is WalletVerdict.REJECT_THROUGHPUT, f"got {row.verdict.value}")
+    check("throughput evidence carries the measured rate",
+          isinstance(row.measured.get("swaps_per_day"), float)
+          and row.measured["swaps_per_day"] > 200, f"got {row.measured}")
+
+    routed_only = [SwapObservation(at=T0 + dt.timedelta(hours=k), aggregator="jupiter")
+                   for k in range(40)]
+    row = screen_wallet("C02", ANCHORS, organic_positions(2), routed_only,
+                        entries=entries_for("C02", ["A4"], late_delay))
+    check("router_only fires on 100% aggregator with no pool interaction",
+          row.verdict is WalletVerdict.REJECT_ROUTER_ONLY, f"got {row.verdict.value}")
+    check("one direct pool swap defeats router_only",
+          not router_only("C02", routed_only[:39]
+                          + [SwapObservation(at=T0, aggregator=None, pool="pump-amm")]))
+
+    thin = [SwapObservation(at=T0, aggregator="jupiter"),
+            SwapObservation(at=T0 + H, aggregator="jupiter")]
+    row = screen_wallet("C03", ANCHORS, [], thin,
+                        entries=entries_for("C03", ["A4"], late_delay))
+    check("two swaps is not_computable, not accepted and not rejected",
+          row.verdict is WalletVerdict.NOT_COMPUTABLE_INSUFFICIENT_SWAPS,
+          f"got {row.verdict.value}")
+    check("...and it is not counted as a rejection",
+          not row.is_rejection() and not row.is_computable())
+
+    both = screen_wallet("C04", ANCHORS, quick, routed_only,
+                         entries=entries_for("C04", ["A4"], late_delay))
+    check("rule order: sandwich is reported ahead of router_only",
+          both.verdict is WalletVerdict.REJECT_SANDWICH, f"got {both.verdict.value}")
 
     # --- summary ----------------------------------------------------------
     print()

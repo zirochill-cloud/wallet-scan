@@ -10,6 +10,10 @@ What it reads
 -------------
 * ``wallet_aggregates`` — the three Phase 1b early-entry metrics, at one
   ``rule_version``.
+* ``anchor_wallet_verdicts`` — quality-filter rejections (``wallet.reject*``). A
+  rejected wallet is skipped before any scoring: the filter's decision binds here,
+  which is the only place it can bind, since a computed-but-unenforced filter is
+  just a report.
 * ``positions`` + ``tokens`` + ``cohort_benchmarks`` — the wallet's closed
   positions and the launch-week benchmark that makes their multiples comparable
   (docs/05-scoring-methodology.md §9).  ``cohort_benchmarks.available_at`` gates
@@ -320,6 +324,10 @@ class ConsumerReport:
     wallets_seen: int = 0
     wallets_scored: int = 0
     skipped: dict[str, str] = field(default_factory=dict)
+    #: Wallets the quality filter rejected, with the verdict that did it. Kept apart
+    #: from ``skipped`` so "we could not rank it" and "we would not score it" never
+    #: read as the same outcome in a report.
+    filter_rejected: dict[str, str] = field(default_factory=dict)
     # Band name -> wallet count for the scores this run built. Computed even on a
     # dry run, because a dry run's whole purpose is to show what would be written.
     bands: dict[str, int] = field(default_factory=dict)
@@ -726,6 +734,30 @@ def build_wallet_score(
 # ---------------------------------------------------------------------------
 # Database reads
 # ---------------------------------------------------------------------------
+def load_filter_rejections(conn) -> dict[str, str]:
+    """Wallets any quality-filter rule has rejected, with the verdict that fired.
+
+    Reads ``anchor_wallet_verdicts`` rather than re-running the rules: the filter is
+    a separate, versioned pass (``solscope.quality_filter``), and enforcing its
+    recorded decision here is what makes those verdicts bind. A verdict under any
+    rule version counts — a rejection is a property of the wallet's behaviour, not of
+    the threshold set that happened to catch it — and the first verdict per wallet in
+    enum order is kept so the reason is stable across runs.
+
+    Returns an empty mapping on a database with no verdicts, which is the honest
+    state before any filter pass has run: no wallet has been cleared *or* rejected.
+    """
+    # ``verdict`` is an enum, so the prefix test needs an explicit text cast.
+    rows = conn.execute(
+        "SELECT wallet, verdict::text FROM anchor_wallet_verdicts "
+        "WHERE verdict::text LIKE 'wallet.reject%' ORDER BY verdict, wallet"
+    ).fetchall()
+    out: dict[str, str] = {}
+    for wallet, verdict in rows:
+        out.setdefault(wallet, verdict)
+    return out
+
+
 def load_aggregates(conn, rule_version: str) -> dict[str, dict[str, StoredAggregate]]:
     """Every wallet's aggregates at one ``rule_version``, grouped by wallet."""
     if not rule_version:
@@ -1229,9 +1261,16 @@ def run_consumer(
     aggregates = load_aggregates(conn, rule_version)
     report.wallets_seen = len(aggregates)
     anchor_counts = load_anchor_counts(conn, list(aggregates))
+    report.filter_rejected = load_filter_rejections(conn)
 
     prepared: list[WalletScore] = []
     for wallet in sorted(aggregates):
+        rejected = report.filter_rejected.get(wallet)
+        if rejected:
+            # A quality-filter rejection is a decision about the wallet, not a
+            # measurement gap: it never reaches a band, whatever its aggregates say.
+            report.skipped[wallet] = f"quality_filter:{rejected}"
+            continue
         anchors = anchor_counts.get(wallet, AnchorCounts(0, 0))
         excesses = load_position_excesses(conn, wallet, as_of, config)
         wallet_score = build_wallet_score(conn, wallet, aggregates[wallet], excesses,

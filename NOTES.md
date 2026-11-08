@@ -626,10 +626,12 @@ blocker still applies unchanged to the greenfield parts.
 
 ---
 
-## § QUALITY_FILTER_PENDING
+## § QUALITY_FILTER_IMPLEMENTED
 
-**Status: OPEN. The unvalidated parameters of the Phase 1b quality filter. Do not present
-them as tuned, and do not treat a filter result as evidence until they are measured.**
+**Status: IMPLEMENTED AND ENFORCED, THRESHOLDS UNVALIDATED. All four rules exist and the
+consumer honours their rejections. Not one threshold is fitted to real data — do not present
+them as tuned, and do not treat a filter verdict as evidence until the rows in the validation
+table below are measured.**
 
 ### Genesis-burst rule: `N` and `Y` are guesses
 
@@ -663,11 +665,65 @@ What validation requires, and what is missing:
 the numbers up without also picking up the fact that they are unvalidated. Flip it only after
 both rows above are measured.
 
-### The three prior heuristics remain unported
+### The three prior heuristics are now ported
 
-`sandwich`, `throughput`, `router_only` have **no codes and no rules**. They were never
-tested, and the filter they belonged to admitted 44 of 45 bundled wallets. They are listed in
-`NOT_PORTED_HEURISTICS` so the omission stays deliberate and cannot be silently reintroduced.
+`sandwich`, `throughput`, `router_only` previously had no codes and no rules; the filter they
+belonged to admitted 44 of 45 bundled wallets. As of 2026-11-08 they are implemented in
+`solscope/quality_filter.py` as `sandwich()`, `throughput()`, `router_only()`, and
+`NOT_PORTED_HEURISTICS` is now empty — the tuple stays so the omission remains expressible.
+
+Defaults, all **unvalidated** (`SCREEN_DEFAULTS_VALIDATED = False`):
+
+| Rule | Default | Source of the number |
+|---|---|---|
+| `genesis_burst` | ≥2 anchors within 60 s of genesis | `PHASE1A_RECOVERY.md` §3, a guess |
+| `sandwich` | ≥2 round trips ≤90 s in ≥2 different mints | guess; 90 s is "one block or two" with margin |
+| `throughput` | >200 swaps/day, window floored at 60 s | guess; ~8× a busy manual trader |
+| `router_only` | >95% aggregator-routed **and** zero direct pool swaps | guess; retail uses aggregators too |
+
+### `screen_wallet` — three outcomes, and the third is not a clean bill
+
+`screen_wallet()` applies the rules in order (genesis burst → swap sufficiency → sandwich →
+throughput → router_only) and returns one verdict. Rejections outrank not-computable: a
+wallet that burst across anchors is rejected even with too few swaps to screen.
+
+* `ACCEPTED` — every evaluable rule ran and none fired
+* `REJECT_*` — a named rule fired, with the measured values on the row
+* `NOT_COMPUTABLE_*` — evidence was absent (fewer than 3 swaps, missing genesis, incomplete
+  buyer set). **Not screened is not cleared**, and it is kept as its own bucket so a
+  coverage gap can never be mistaken for a pass rate.
+
+`SCREEN_RULE_VERSION = "quality_screen/v1"` is separate from the burst-only `RULE_VERSION`,
+so adding three rules did not relabel existing verdicts as having been screened by four.
+
+### Enforcement: the consumer is where a verdict binds
+
+`consumer.load_filter_rejections()` reads `anchor_wallet_verdicts` for `wallet.reject*`
+(any rule version — a rejection is a property of behaviour, not of the threshold set that
+caught it) and `run_consumer()` skips those wallets before scoring at all. They get
+`skipped[wallet] = "quality_filter:<verdict>"` and appear in a separate
+`ConsumerReport.filter_rejected` and CLI line, so "we would not score it" never reads as
+"we could not rank it". A rejected wallet produces no `scores` row even with three computed
+aggregates; `tests/test_scoring_consumer.py` proves exactly that.
+
+Schema: `schema/007_quality_filter_verdicts.sql` adds the new verdict and rule-id enum values
+and generalises `verdict_rule_consistency` from "is the genesis-burst verdict" to "every
+`wallet.reject*` names a rule, and nothing else does".
+
+### Measured on synthetic sets (2026-11-08) — implementation check, not validation
+
+`tests/test_phase1b_filter.py`, same 50 bundled / 50 clean wallets as the burst calibration,
+now run through `screen_wallet`:
+
+| Set | Wallets | Rejected | Accepted | not_computable | Target |
+|---|---|---|---|---|---|
+| bundled | 50 | **50 (100%)** | 0 | 0 | ≥90% rejected |
+| clean | 50 | **0 (0%)** | 50 | 0 | ≤10% false positive |
+
+Each heuristic also fires on its own targeted signature, and not on its neighbour: sandwich
+needs quick round trips in *different* mints, one direct pool swap defeats `router_only`, and
+two swaps lands in `not_computable` rather than either verdict. Both sets remain synthetic,
+so the validation gap below is unchanged.
 
 ### Related open item — anchor count
 

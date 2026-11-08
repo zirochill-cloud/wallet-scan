@@ -167,7 +167,7 @@ echo "solscope_bootstrap: $n tables"
 # of tables missing" much later, in a test that is about something else.
 for m in 001_init 002_anchor_registry 003_wallet_aggregates \
          004_positions_entry_swap_signature 005_scores_band_basis \
-         006_scores_promising_thin_band; do
+         006_scores_promising_thin_band 007_quality_filter_verdicts; do
   found=$(psqlq solscope_bootstrap "select count(*) from schema_migrations where name='${m#*_}'") \
     || die "could not read schema_migrations"
   [ "$found" = "1" ] || die "migration $m was not recorded (schema_migrations has $found rows for it)"

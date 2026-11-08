@@ -231,7 +231,10 @@ def write_verdict(
     if not rule_version:
         raise AnchorWriterError("rule_version is required — an unversioned verdict is unreadable")
 
-    is_rejection = verdict_value == WalletVerdict.REJECT_GENESIS_BURST.value
+    # Every ``wallet.reject*`` verdict is rule-driven, not only the genesis burst:
+    # sandwich/throughput/router_only carry their own rule ids, and a rejection
+    # recorded without one is an unreadable decision.
+    is_rejection = verdict_value.startswith("wallet.reject")
     if is_rejection != (rule_value is not None):
         raise AnchorWriterError(
             f"verdict {verdict_value!r} with rule_id={rule_value!r}: a rejection must name "

@@ -345,6 +345,10 @@ def _format_consumer_report(report, dry_run: bool) -> str:
         f"  scored         {report.wallets_scored}",
         f"  gated out      {report.wallets_skipped}",
     ]
+    if report.filter_rejected:
+        lines.append(
+            f"  filter rejects {len(report.filter_rejected)} "
+            "(quality filter; never scored)")
     if report.skipped:
         counts: dict[str, int] = {}
         for reason in report.skipped.values():
