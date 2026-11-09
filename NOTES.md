@@ -725,6 +725,43 @@ needs quick round trips in *different* mints, one direct pool swap defeats `rout
 two swaps lands in `not_computable` rather than either verdict. Both sets remain synthetic,
 so the validation gap below is unchanged.
 
+### Real-data calibration (2026-11-09) — first evidence, and it is adverse
+
+`spikes/calibrate_filter.py` ran the four rules over the 100 first-20 buyers already in
+the database (read-only; nothing reseeded). Full record: `docs/PHASE1B_CALIBRATION.md`.
+
+**95/100 rejected, every rejection from `sandwich`.** Verdicts: 95 `reject_sandwich`, 3
+`not_computable_insufficient_swaps`, 2 `accepted`. Evaluated alone: `sandwich` 95,
+`throughput` 32, `router_only` 0, `genesis_burst` 0 (and it *cannot* fire — each wallet
+is in one anchor's first-20 set, so N=2 is unreachable).
+
+**Threshold sensitivity:** `throughput_max_swaps_per_day` is load-bearing (58 wallets at
+50/day → 32 at 200 → 9 at 1000). `sandwich_max_seconds` is **inert**: 95 wallets at 30 s,
+60 s, 90 s and 180 s alike. `router_only` is inert at 0.80–0.99 because the sample trades
+pool-direct (one wallet: 1,389 of 1,389 swaps direct). `genesis_burst` is structurally
+unmeasurable on this sample.
+
+**Overlap:** 32 wallets have ≥2 rules firing and all 32 are sandwich ∩ throughput, so
+throughput adds no decision sandwich does not already make. `router_only` never co-fires
+because it never fires.
+
+**Manual spot-check:** 7 of 8 sampled wallets agreed with the filter (3 clear bots, 1
+bot-like, the only 2 accepted wallets both human). The mismatch is the point: a wallet
+with 0.5 swaps/day over 417 days, active in all 24 hours, was rejected because 30 of its
+207 swaps were sub-90 s round trips — the rule counts them over the entire history with
+no rate and no recency, so a 32,488-swaps/day bot and a two-year retail trader get the
+same verdict.
+
+**Conclusion: the filter is too aggressive on this sample**, and `sandwich` is the cause —
+not its threshold, which is inert, but its shape. Thresholds were **not** changed and
+`SCREEN_DEFAULTS_VALIDATED` remains `False`: a fix is a logic change that needs its own
+decision, and this run was measurement.
+
+Two sampling facts a reader needs: the first pass sampled oldest-first and mislabelled a
+wallet as `insufficient_swaps` from a quiet early slice, so the sample was re-fetched
+newest-first and all numbers above are from that pass; and 25 wallets hit the
+1,500-transaction cap, so their rates describe the recent window, not a lifetime.
+
 ### Related open item — anchor count
 
 Phase 1b has **no anchor-count requirement**: nothing states whether 3 anchors, 20, or 200 are
