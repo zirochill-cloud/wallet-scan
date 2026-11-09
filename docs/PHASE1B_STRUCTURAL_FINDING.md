@@ -42,8 +42,12 @@ denominator.
 **Observed: 0 of 100.** The seeded set is 5 anchors × 20 buyers = 100 slots and 100 distinct
 wallets — not merely zero triplets, but zero *duplicate pairs*. Under the same model the
 expected number of sharing pairs is `C(5,2)·(20/P)²·P = 4,000/P`, i.e. 0.32 at `P` = 12,500
-and 0.04 at `P` = 100,000. Observing zero is therefore unremarkable, and it is also too small
-a sample to infer `P`. Recorded in `docs/PHASE1B_ANCHORS.md` ("cross-anchor overlap: 0 of 100");
+and 0.04 at `P` = 100,000. Observing zero is therefore unremarkable, and it is also too small a
+sample to infer `P`: both 0.04 and 0.32 are consistent with 0/100, so **the sample cannot
+discriminate `P`**. The anchor-count requirement is stated as a range for that reason — it
+cannot be reduced to a single number until `P` is measured, and measuring `P` requires either a
+much larger anchor set or population-size data this tool does not have. Recorded in
+`docs/PHASE1B_ANCHORS.md` ("cross-anchor overlap: 0 of 100");
 the consumer run for that set reads `wallets seen 100 / scored 0 / gated out 100`, every
 skip reason `early_entry_not_rankable`.
 
@@ -100,9 +104,12 @@ Buy or seed 30–50 independent anchors (different deployers and weeks, per
 - **Cost:** 30 launches × 20 first buyers = 600 wallets to profile, ≈3 paginated
   `getTransactionsForAddress` calls each (500 txs ≈ 2.2 s, cap 1,500) — roughly 40 credits and
   ~7 s per wallet, so **~24,000 credits and about an hour of RPC**.
-- **Yield risk:** overlap at scale is produced partly by wallets that buy *everything*, and
-  those are the 72% the filter rejects. Expecting `E` rankable wallets is therefore
-  optimistic; size the run against the filter's pass rate, not the raw expectation.
+- **Anti-correlation between overlap and quality:** persistent snipers are what produces
+  overlap at scale, and they are the 72% the filter rejects on the real sample. The raw yield
+  calculation (0.22 at `N` = 30, 1.0 at `N` = 50) is therefore an **upper bound**; the
+  filter-adjusted yield is below it, so size the run against the filter's pass rate rather than
+  the raw expectation. Path 1 may produce **zero** rankable wallets even at 196 anchors if the
+  anchor set's buyer population is dominated by the wallets the filter correctly rejects.
 - **Scale mismatch:** no amount of anchors in the 5–10 range moves `E` off ~0. 10 anchors is
   0.006 expected wallets. Ten more anchors is not a step toward rankability.
 
@@ -112,10 +119,11 @@ Choose anchors because **known smart wallets bought them early**, so overlap exi
 construction rather than by luck. The KOL's early entry is the selection criterion.
 
 - **Prerequisite:** an external label source. MadeOnSol's free tier is sufficient to start:
-  200 calls/day, 1,069+ tracked KOL wallets, KOL leaderboards and per-KOL PnL real-time even on
-  the free tier (live trade *feeds* are 5-minute delayed; free keys expire after 30 days and
-  are renewable). Paginated per-wallet trade history is PRO+, so **trade reconstruction stays
-  on Helius** — the API supplies the label, not the history.
+  200 calls/day (60/min burst), 2,465 tracked KOL wallets, KOL leaderboards and per-KOL PnL
+  real-time even on the free tier (live trade *feeds* are 5-minute delayed; free keys last 30
+  days and regenerate in one click). Base URL `https://madeonsol.com/api/v1`; `api.madeonsol.com`
+  does not exist. Verified reachable 2026-11-09. Paginated per-wallet trade history is PRO+, so
+  **trade reconstruction stays on Helius** — the API supplies the label, not the history.
 - **Non-circular:** the KOL label is external evidence produced by someone else, not this
   tool's own output. It is not a re-scoring of our own verdicts.
 - **Requires the filter:** a KOL wallet can itself be bundled, botted or an insider. The
@@ -132,11 +140,17 @@ Accept one-anchor wallets as candidates when they pass the filter and show a pro
 - **Prerequisite:** explicit user approval. This is a **semantic change** to the validity rule
   — the score would mean "one good early buy that survived the filter" instead of "a pattern
   observed across independent launches". It also retires the reason D15 exists.
-- **Technical consequence to check before choosing it:** relaxing the gate conjunct alone may
-  not produce a ranking. At `n = 1` the sample factor is `1/5 = 0.20` of full credit
-  (`sample_full_credit_at: 5`), which drags the composite toward the floor — and
-  `confidence_min: 40` still applies. Whether any one-anchor wallet clears 40 is unmeasured;
-  it may need a second config change, widening the semantic change.
+- **Technical consequence, now computed (2026-11-09).** Two changes are needed, not one: the
+  gate's `min_distinct_anchors: 3` → `1`, **and** `aggregation.MIN_ANCHORS` (a code constant of
+  `2`) → `1`. With one anchor every metric returns `not_rankable`, so the wallet never reaches
+  the gate at all — which is exactly the observed 100 seen / 0 scored.
+  With both changes: at `n = 1` the composite still passes the gate (84 for high-factor wallets),
+  but shrinkage at `n = 1` (factor `1/(1+5) = 0.1667`) caps the adjusted score at ~46 for a
+  raw-82 wallet. Output is **investigate-band, not track-band**. This is a real output — a list
+  of wallets worth a human's time — not an empty ranking, but it is not the track-band ranking
+  the tool was designed to produce. The cap is structural: even a raw-100 wallet at `n = 1`
+  reaches only 49.00 adjusted (shrunk 58.33 × confidence 0.84), and `watch` needs 60, which
+  would require a raw score above 178 on a 0–100 scale.
 - **Advantage:** costs nothing and yields candidates from the 100 wallets already seeded.
 
 ## 4. Recommendation

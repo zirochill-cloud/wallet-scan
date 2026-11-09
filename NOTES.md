@@ -306,6 +306,15 @@ every fixture from the implementation, not from a mental formula — applies to 
 symmetrically to agent fixtures. When a user instruction contains hand-computed values, derive
 them from code before acting.
 
+**2026-11-07: Third user-side arithmetic error this session.** The expected-overlap figures I
+supplied (0.0004 at N=5, 0.22 at N=30, 1.0 at N=50) imply a buyer population of ~12,500, not the
+stated 100,000. At P=100,000 the formula gives ~0.000008 at N=5 and requires ~196 anchors, not
+30–50. The agent recomputed the exact binomial tail and stated the requirement as a range (tens
+to low hundreds, P unmeasured) rather than repeating the wrong numbers. Same pattern as the §6
+adjusted-column and the real-shrinkage matrix: user instruction contains hand-computed values
+that the agent must re-derive from the formula, not adopt. The rule stands: derive user-supplied
+numbers from the implementation before acting on them.
+
 **2026-11-07: "No new capability" was scoped too broadly.** The instruction was meant to prevent
 speculative Phase 5 / S1–S3 work on top of unverified anchor input. It was applied by the agent to
 a CLI wrapper around an already-tested function (`run_consumer`), so the closeout shipped with a
