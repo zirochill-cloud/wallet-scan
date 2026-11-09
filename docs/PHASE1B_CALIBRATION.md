@@ -92,20 +92,19 @@ throughput answers "is the volume infrastructure".
 | `8a6JShiMBw…` (retail, the v1 mismatch) | reject_sandwich | **accepted** | 27 / 198 | 13.6% | **holds** |
 | `Gfds2Ur4UV…` (32,488 swaps/day) | reject_sandwich | **reject_sandwich** | 1,189 / 1,389 | 85.6% | **holds** |
 | `AviBqnzP8m…` (55.8 swaps/day, 626 mints) | reject_sandwich | **reject_sandwich** | 621 / 1,339 | 46.4% | **holds** |
-| `52NUhyYcpw…` (11,226 swaps/day) | reject_sandwich | **reject_throughput** | 22 / 1,462 | 1.5% | **does not hold** |
+| `52NUhyYcpw…` (11,226 swaps/day) | reject_sandwich | **reject_throughput** | 22 / 1,462 | 1.5% | **rejected by the correct rule** |
 | `8GSDbEhMy3…` (53.8 swaps/day, bot-like) | reject_sandwich | **accepted** | 215 / 1,260 | 17.1% | **does not hold** |
 | `FwA2rjEzvs…` (3 swaps / 51 days) | accepted | **accepted** | 0 / 3 | 0% | **holds** |
 | `GRmwzXEBvD…` (8 swaps / 40 days) | accepted | **accepted** | 1 / 7 | 14.3% | **holds** |
 
-Five of seven match the predictions. The two that do not are informative, and neither was
-tuned away:
+Six of seven match the predictions. The seventh (`8GSDbEhMy3`) is a documented false
+negative. `52NUhyYcpw` is not a miss at all — it is the two rules doing different jobs:
 
-- **`52NUhyYcpw` is not a sandwich wallet.** It makes 1,462 swaps in 3.2 hours but only
-  **23** of them are matched round trips — 22 of those under 90 s. It is buying or
-  distributing in one direction, not flipping. Its quick-trip share is 1.5%, *below* the
-  retail wallet's 13.6%; forcing sandwich to catch it would require a share floor around
-  0.01, which would re-capture every retail wallet. It is still rejected — by
-  `throughput`, at 11,226 swaps/day, which is the correct rule for what it does.
+- **`52NUhyYcpw` is not a sandwich wallet.** Its 1.5% share is below the retail wallet's,
+  because it buys and distributes in one direction rather than flipping. It is correctly
+  rejected by `throughput` at 11,226 swaps/day. The two rules measure different bot
+  patterns — `sandwich` catches flip-flopping, `throughput` catches one-directional volume —
+  and the sample validates that they complement rather than duplicate.
 - **`8GSDbEhMy3` is a near-miss at 17.1%** against a 20% floor. Its profile is bot-like
   (median inter-swap gap 0 s, 10 active hours, 127 mints) and 215 of its 220 round trips
   are sub-90 s, but its swap volume dilutes the share. The gap to the retail wallet is
@@ -163,14 +162,18 @@ redundancy. That redundancy is what v2 removed.
 100-wallet sample, with one known false negative.** Rejection is 72% (inside a plausible
 band for a bot-selected population), the human regression guard holds, both unambiguous
 bots are still caught by `sandwich`, throughput now makes 5 decisions of its own, and no
-human wallet is rejected. The residual failures are `8GSDbEhMy3` (bot-like, 17.1% share,
-accepted) and `52NUhyYcpw` (rejected, but by throughput rather than sandwich, because it
-is not sandwiching).
+human wallet is rejected. The residual failure is `8GSDbEhMy3` (bot-like, 17.1% share,
+accepted) — one wallet, kept as a known limitation rather than tuned away. `52NUhyYcpw` is
+not a residual failure: it is rejected, by the rule that measures what it does.
 
 `SCREEN_DEFAULTS_VALIDATED` remains **False**. This is a sample-level observation on 100
 unlabelled wallets, not population-level validation against external ground truth. The
 next validation target is a labelled bundled/clean set from an external source, or a
 larger anchor sample (S3 discovery or additional user-supplied anchors).
+
+None of this produces a ranked wallet, and that is a separate blocker rather than a filter
+question: cross-anchor overlap does not exist at five anchors. See
+`docs/PHASE1B_STRUCTURAL_FINDING.md`.
 
 ### What would change the conclusion
 

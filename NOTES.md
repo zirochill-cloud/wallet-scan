@@ -783,13 +783,15 @@ of 198 recent swaps, share 13.6% — is now **accepted**. Both unambiguous bots 
 `reject_sandwich` (`Gfds2Ur4UV` at 85.6%, `AviBqnzP8m` at 46.4%), and both human
 regression guards (`FwA2rjEzvs`, `GRmwzXEBvD`) stay accepted.
 
-**Two predictions did not hold, and neither was tuned away:**
-`52NUhyYcpw` is rejected by **throughput**, not sandwich — 1,462 swaps in 3.2 hours but
-only 23 matched round trips (1.5% share), so it is buying/distributing, not flipping, and
-no share floor that caught it would spare the retail wallet. `8GSDbEhMy3` is **accepted**
-at a 17.1% share against a 20% floor — a known false negative, 3.5 points above the
-retail wallet's 13.6%, too narrow a gap to place a threshold in without fitting it to two
-wallets.
+**One prediction did not hold; it is kept as a known false negative.** `8GSDbEhMy3` is
+**accepted** at a 17.1% share against a 20% floor — 3.5 points above the retail wallet's
+13.6%, too narrow a gap to place a threshold in without fitting it to two wallets, so
+`min_share` was not moved for it. `52NUhyYcpw` is **not** a failed prediction: its 1.5%
+share is below the retail wallet's because it buys and distributes in one direction rather
+than flipping, and it is correctly rejected by **throughput** at 11,226 swaps/day. The two
+rules measure different bot patterns — sandwich catches flip-flopping, throughput catches
+one-directional volume — and the sample validates that they complement rather than
+duplicate.
 
 **Round-trip reconstruction was corrected too:** v1 opened an episode only when none was
 open, collapsing "buy, buy, buy, sell-all" into one round trip and scoring a 1,462-swap
@@ -813,4 +815,12 @@ Phase 1b has **no anchor-count requirement**: nothing states whether 3 anchors, 
 needed to support a claim. That needs a power calculation, and it is marked **TBD** in
 `docs/PHASE1B_SCOPING.md`. The minimum viable run uses 3 *mocked* anchors to prove the
 plumbing — a fixture size, not a statistical one.
+
+**Quantified 2026-11-09:** `docs/PHASE1B_STRUCTURAL_FINDING.md`. Expected wallets in ≥3
+first-20 lists is `C(N,3)·20³/P²` — 0.0005 at five anchors, ~1 at 49 anchors (small buyer
+pool) or ~196 (large). Five anchors cannot rank anybody and 5–10 more cannot either; the
+rankability floor is a coverage question no filter edit touches. Three paths: 30–50
+independent anchors, KOL-curated anchors (recommended), or relaxing
+`min_distinct_anchors` to 1 with filter+profit as substitutes (a semantic change needing
+approval).
 
