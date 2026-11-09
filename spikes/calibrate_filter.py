@@ -69,7 +69,7 @@ from solscope.quality_filter import (  # noqa: E402
 #: slice and reported it as ``insufficient_swaps`` while its ten most recent
 #: transactions were all swaps. Recent behaviour is what a screening rule is about,
 #: so the sample runs backwards from now and the oldest end is what gets dropped.
-CACHE = pathlib.Path(tempfile.gettempdir()) / "solscope-filter-calibration" / "newest"
+CACHE = pathlib.Path(tempfile.gettempdir()) / "solscope-filter-calibration" / "newest_fifo"
 CACHE.mkdir(parents=True, exist_ok=True)
 
 PAGE = 500
@@ -255,16 +255,29 @@ def derive(wallet: str) -> dict:
             kinds["other"] += 1
     truncated = n_tx >= MAX_TXS
 
+    # FIFO lot matching, the same semantics ``positions.reconstruct`` uses for closed
+    # positions. The first version opened an episode only when none was open and closed
+    # it on the next sell, which collapses "buy, buy, buy, sell-all" into ONE round trip
+    # and made a wallet with 1,462 swaps in three hours look like 21 round trips. Each
+    # buy lot matched against the sells that consume it is a round trip, so a wallet
+    # that genuinely flips counts proportionally more.
     trips: list[RoundTrip] = []
     for mint, evs in events.items():
         evs.sort(key=lambda e: e[0])
-        opened = None
+        lots: list[list] = []  # [remaining_qty, opened_at]
         for at, delta in evs:
-            if delta > 0 and opened is None:
-                opened = at
-            elif delta < 0 and opened is not None:
-                trips.append(RoundTrip(mint=mint, opened_at=opened, closed_at=at))
-                opened = None
+            if delta > 0:
+                lots.append([delta, at])
+                continue
+            need = -delta
+            while need > 0 and lots:
+                lot = lots[0]
+                take = min(need, lot[0])
+                trips.append(RoundTrip(mint=mint, opened_at=lot[1], closed_at=at))
+                lot[0] -= take
+                need -= take
+                if lot[0] == 0:
+                    lots.pop(0)
 
     gaps = []
     ordered = sorted(times)
@@ -445,7 +458,7 @@ def main(argv: list[str]) -> int:
             burst_computable += 1
         if genesis_burst(wallet, anchors, entries=entries):
             isolated["genesis_burst"].add(wallet)
-        if sandwich(wallet, trips):
+        if sandwich(wallet, trips, swaps):
             isolated["sandwich"].add(wallet)
         if throughput(wallet, swaps):
             isolated["throughput"].add(wallet)
@@ -480,6 +493,8 @@ def main(argv: list[str]) -> int:
     sweeps = {
         "throughput_max_swaps_per_day": [50, 100, 200, 500, 1000],
         "router_only_min_aggregator_fraction": [0.80, 0.90, 0.95, 0.99],
+        "sandwich_min_share": [0.10, 0.15, 0.20, 0.30, 0.40],
+        "sandwich_window_days": [7, 14, 30, 60, 90],
         "sandwich_max_seconds": [30, 60, 90, 180],
     }
     sweep_rows: list[dict] = []
@@ -500,8 +515,12 @@ def main(argv: list[str]) -> int:
                     fired = throughput(wallet, swaps, max_swaps_per_day=value)
                 elif key == "router_only_min_aggregator_fraction":
                     fired = router_only(wallet, swaps, min_fraction=value)
+                elif key == "sandwich_min_share":
+                    fired = sandwich(wallet, trips, swaps, min_share=value)
+                elif key == "sandwich_window_days":
+                    fired = sandwich(wallet, trips, swaps, window_days=int(value))
                 else:
-                    fired = sandwich(wallet, trips, max_seconds=value)
+                    fired = sandwich(wallet, trips, swaps, max_seconds=value)
                 n += bool(fired)
             hits.append(n)
             print(f"| {value} | {n} |")
@@ -553,8 +572,10 @@ def main(argv: list[str]) -> int:
                 "measured": {
                     k: verdicts[w].measured.get(k)
                     for k in ("anchors_observed", "swaps_observed", "positions_observed",
-                              "quick_round_trips", "swaps_per_day", "aggregator_fraction",
-                              "direct_pool_swaps", "min_swaps_to_screen")
+                              "quick_round_trips", "window_swaps", "quick_share",
+                              "quick_mints", "min_round_trips", "min_share", "window_days",
+                              "swaps_per_day", "aggregator_fraction", "direct_pool_swaps",
+                              "min_swaps_to_screen")
                     if k in verdicts[w].measured
                 },
                 "profile": obs[w]["profile"],

@@ -1,10 +1,13 @@
 {
-  "generated_at": "2026-11-09T00:21:35.625954+00:00",
+  "generated_at": "2026-11-09T01:05:22.041783+00:00",
   "config": {
     "genesis_burst_min_anchors": 2,
     "genesis_burst_max_seconds": 60,
     "sandwich_max_seconds": 90,
-    "sandwich_min_round_trips": 2,
+    "sandwich_min_round_trips": 3,
+    "sandwich_window_days": 30,
+    "sandwich_min_share": 0.2,
+    "sandwich_min_window_swaps": 10,
     "throughput_max_swaps_per_day": 200,
     "router_only_min_aggregator_fraction": 0.95,
     "min_swaps_to_screen": 3
@@ -14,34 +17,27 @@
     "anchors": 5
   },
   "outcomes": {
-    "wallet.reject_sandwich": 95,
-    "wallet.not_computable_insufficient_swaps": 3,
-    "wallet.accepted": 2
+    "wallet.reject_sandwich": 67,
+    "wallet.accepted": 25,
+    "wallet.reject_throughput": 5,
+    "wallet.not_computable_insufficient_swaps": 3
   },
-  "rejection_rate": 0.95,
+  "rejection_rate": 0.72,
   "per_rule_isolated": {
     "genesis_burst": [],
     "sandwich": [
       "2Cxfdys77rVfcHsedDgBtiCSp839bDufcBt9akDxLNXA",
       "2Nk5i4NGgL4kk4dsR7R5FcK3BPe8s21NNFnadXkVX2G8",
-      "2hN82SXLUffhG3vxpezRmae1sGrCBMqHHBDxjmjpagqk",
-      "2mQj1wKkRxcgBJizAziAcVUsfC7cc4KmioDy4ssGLnUH",
       "2neGXs28bVKtKwGhKjz9CaU27saXpmNKenqmkADc6Rg7",
       "348Xv4PvbMXLR4HFUbmowskWgwTnP5bVTzKVmD1fin97",
       "35caaJFwzSNaFwFmP1f33wDP9cUFEXTLDsFnjna7kAjs",
-      "365ox2yoGYXQfzubohqCgzhg2MrG5PKxBRi4p9gpNQGi",
       "3FKStyPE8daDCcB4rWS8CuoJSbDBnoTR95uTw8hbDHSc",
       "3HfK8CJrfJZQjSQkLwS7vrZka8juyWRnmm2Xis9ozF6o",
       "3HsjWZJNgoAmhpbK8jGkbqX6zh1dxzctrxdXk46zb4Kt",
       "3HtTsxBfKvPaCfsAVhU91bsQfG9WmHmpohUD1bGrTVVi",
       "3N1KKNyjKBxmRN66zF2jZwdtLaR8D3zXcAgKvuuFAdiS",
-      "3TB4EwTwSrkWgjubYYbd6JNmVcTSJ44EgMMwKm8HZABQ",
-      "3gHrfi6t4xG2KEH4gga9HxLRYqws9iTKdkLG55NwaTZJ",
       "3qFAgH2EYb5cPHFchAvv1ErunLqFwfZVtjXYPBeFDknc",
-      "42NxDyCL4uyLa4MtHPSaBL8zfwu4RUtXrMjJpsFqQ7wZ",
-      "52NUhyYcpwwycY2To1bLMtp6pjDjtUMFeUqQxZfBJgAt",
       "55msLm128tQdXLXCXLxd756H9SaCo7wPpdetEioe7D8d",
-      "56eGmWrgsm7q7bxnY8fWjo39iDbuLLU4nJKw34BuYMeL",
       "57WkTbDxxu3tC9Nhve8hQms5KBRa7MFEPSnnEeThivvX",
       "5WdnohUqo1npALEwUT67nfDE16pyXHH5uKkvaCsjbUoP",
       "6hVFtyYLovFvsigSquo3wqef54m6tFFFJPzxMv7ZZnGN",
@@ -49,14 +45,7 @@
       "6wMeHP7woFnUvZDJVkrd8S352THs5VZ8hLGhQjqR3Gba",
       "78Qkt6pnSvDAfDLPG97At5ksFLdPqgNUKRKtGh9g1e5D",
       "7Eb8xdWMMGM5TBHGvsB7y3SL65r3gUzLXSJV39fgjcVy",
-      "7RCqvciFbU5nYL4feUPq49DmEJpdT3aYqkhgtv96Y1XY",
-      "7SHjoR1juE7ZK2RGT1XgDZLUs8MbgcDeVveBa1HqXATW",
-      "7WPMy3C639ETRNHuNedEe2HKEvwHYFgUP4wXwymBmXEg",
       "88887QrRZPZmsstEXsoXXB8E7nbmUDde4Gp5s7jG3ENu",
-      "8GSDbEhMy3LbuLnqyb1ehQr1wwX3yiMN5pL98NnEM32a",
-      "8NfcAge8C5jdGM4HcuZj9M8KajRaZ2h9Azp5UuTzh9k5",
-      "8a6JShiMBwKrYN9b62o7aJtDcobDwXmTudai6PpRy18k",
-      "8aXuJ2X76cDF2wfWWfyzGnscbomZt3w15b2vqaPGpCE",
       "8dtx2tr4TuJsYpri2suggFu1pg3DVjFLBBVmhtDy1MEF",
       "8ffjvojhshDexboDqQWU8DXt3C2gSAoZHZVDZH3Wvie2",
       "8pQbCA8NzQZpj1j9FvAAtEb3NAbJnEbyYHFwkm3WqEby",
@@ -64,37 +53,26 @@
       "9EHhuegvjnaEMGhXmgqhgyVa7fBnmqmYV93KQ76Bb59i",
       "9F1X92uBq9WSdUkj1KhfuQiNhMWtTd4NKBBk8oPnGfSJ",
       "9KEaVWe91Yquwex26g2bFn85ij8PaEaUiVkjbLF2X7aX",
-      "9U4M3hDNxGprhhetLBUFpwrjtZ3iK4xDbLGijq269WHr",
       "9gpdgZTNxvSrbiBcFM8aWdCUBvQrcprQR4TmsJLU2M9L",
       "9khkRvs76cmVAfRHswogDqBwikdHDKBH2e9zXLuaYrTn",
       "9pqbbqUw1Z3zVv4upx6jPKhmCaGbuXCZThhqWoTaR3cH",
-      "AEYXnDo7zKJ9xe9qJMwZQpRBxWUcrppDnur1mozP5bvU",
       "AMDEmVocLtN5ji2gBY7BrmSHEyM5vt6TGszBbg4crMXg",
       "AR64rNW8eTsthyYgebVgtU7FwmBaV5dc8DtCfrv6owS4",
       "AUrkH8jWtG7our71fSYqCp524BAJuf5Tampe267wfyFA",
       "AWmeKTntPiVfnhBaQ13FWpUoqQ5SfoSVrYX2RYfaWavS",
       "Ain7MsHGhu6uqXB1z6XA7QUxqWxaRZJNk6kFVb3d2khm",
       "AviBqnzP8mmdJFbb7USGQXcYT8GrZEbh7jiL5fRo869N",
-      "B9r6LwaixWL7VB9eSuJb48VWTHjYyhxcHy6a86LAWzzz",
-      "BukaPo9VfTUUCTWcTNzxetNEDA9pxxzWSjt5anYp6zrZ",
-      "BzDj6PHVMVSPsHW4KW7q8qupTCpQEKtPRLTnKZkvXkdo",
       "CCCCQCrL6zVjnDeucDzcxJgxAs5ahNmrhw1CDexPhqrd",
       "CFt926D6bJSFKFt34VJDTAqrPRMLQJVLA5vP1oeL3GTt",
-      "CeUn52Jf1zehZmw7YbWW31F9LUypqFxj3qjy5KWvLiPa",
       "CseedJMVyZXMCQ2GBhiVqZnEn4BZ7nJtEwu9RUvimBAw",
       "D2CU7ziXFZVhmfuV2uRHe1Un2YrmpowY1s58EqYACgHB",
-      "DTS6KBsfaveqP5WUuWpmk4Mac14nanwwnBaraUAWsrYJ",
-      "DeNwH63Xgj3a4bXXHw79BiL5iBUNBQVaRYeLHQTQxL7z",
-      "DgN1YE7mo2nNgTJ2fL5645WXChrqUQuo7RaTuDZGp94Q",
       "DzRqREhHeiSVpGSurhnHvyqoFrweh99u9yUSdXL6CQft",
-      "E1mgnLPgRZR4U7r6p3mmK4dZv9FbC2X64VdsUpgrqN9u",
       "EH3kyN7n72ryqkLQLSSPLSTkarPmdWEoG8rWh6Wc23G1",
       "EM1ZyNA3g4rr9MBzSEA36QqWd7t7cp54zDidm3YskyeU",
       "ESrdxDfxD1SS5qUXPTMQxydvLcT55G6wCexAnKvfPfRi",
       "EpkTo4khMNuJV7fZhY5bGGiY7eCeKpnXf2fHoMwZCjMS",
       "ExqBy6d17yzFx5z44G2m3mbY8iTvMX8XmiYtuvarAud2",
       "Exwuds3iYWhUbSkFk7UDzyiV3zDHqidjrSusxNuXxJRe",
-      "F2jqSx5vi3zwbxcLXq7MWpGBNTBDd6Hffp6up8LTMbAY",
       "F3Rmgd1wmFSF6V36cpLbZ9Q2XSdz1XKcD4L1UrKLQyyn",
       "FcFbJMHdwec2V7XzTY48GsRy5YAmJWimyUtafqB2qjG",
       "FkmwN69qR8AKtixDXwood4qgged3QC27kZeBJwrYm3S1",
@@ -102,7 +80,6 @@
       "G3ouJNKDPGXNUU1qtbZ3bwzqnnphMEB2qQjBiDfCbm4x",
       "GAo55r3AsJFcEa8fAwq7t17AQCny8oMXdjpjmqqxRcsn",
       "GMorFBqTjJQQ1Fsc5PL9n4JYNMYFzg6eYTCRq9f2SiGc",
-      "GPsdQQDYewZuYjG6u2fhvpTbPce9kKfoSE4usNLZUXPU",
       "GZmUDsn8W1rtopeTgwVgab9rsRGMLVVMfsXwWKD1VS9p",
       "Gfds2Ur4UVKwuwVSt8yvycYdH1vfwnf6i8TaWdf73Pn7",
       "Gku8cuthhvfoPoG18rg1EULt58xB7j1fgPoifJcyh411",
@@ -115,7 +92,6 @@
       "PMJA8UQDyWTFw2Smhyp9jGA6aTaP7jKHR7BPudrgyYN",
       "gVDXhoGbePACvSqN7CZBtQXFW9eyJwsgudPEwSydAkx",
       "hmpfGde3CsTyMEukAPqFaUXZLD69pGPJg8bqRNE8GFA",
-      "kBWCyHmjagiqL3HSLatfmPWGUx3V7KeHVjQWemdX4dZ",
       "sssssDdMNAWKingjpEojkTNdVuZrBe7FsJLaGtexe7d"
     ],
     "throughput": [
@@ -158,9 +134,6 @@
   "multi_rule_wallets": [
     "2Cxfdys77rVfcHsedDgBtiCSp839bDufcBt9akDxLNXA",
     "2Nk5i4NGgL4kk4dsR7R5FcK3BPe8s21NNFnadXkVX2G8",
-    "3TB4EwTwSrkWgjubYYbd6JNmVcTSJ44EgMMwKm8HZABQ",
-    "3gHrfi6t4xG2KEH4gga9HxLRYqws9iTKdkLG55NwaTZJ",
-    "52NUhyYcpwwycY2To1bLMtp6pjDjtUMFeUqQxZfBJgAt",
     "6hVFtyYLovFvsigSquo3wqef54m6tFFFJPzxMv7ZZnGN",
     "7Eb8xdWMMGM5TBHGvsB7y3SL65r3gUzLXSJV39fgjcVy",
     "88887QrRZPZmsstEXsoXXB8E7nbmUDde4Gp5s7jG3ENu",
@@ -173,12 +146,10 @@
     "AviBqnzP8mmdJFbb7USGQXcYT8GrZEbh7jiL5fRo869N",
     "CFt926D6bJSFKFt34VJDTAqrPRMLQJVLA5vP1oeL3GTt",
     "D2CU7ziXFZVhmfuV2uRHe1Un2YrmpowY1s58EqYACgHB",
-    "DeNwH63Xgj3a4bXXHw79BiL5iBUNBQVaRYeLHQTQxL7z",
     "DzRqREhHeiSVpGSurhnHvyqoFrweh99u9yUSdXL6CQft",
     "EH3kyN7n72ryqkLQLSSPLSTkarPmdWEoG8rWh6Wc23G1",
     "EM1ZyNA3g4rr9MBzSEA36QqWd7t7cp54zDidm3YskyeU",
     "EpkTo4khMNuJV7fZhY5bGGiY7eCeKpnXf2fHoMwZCjMS",
-    "F2jqSx5vi3zwbxcLXq7MWpGBNTBDd6Hffp6up8LTMbAY",
     "G3ouJNKDPGXNUU1qtbZ3bwzqnnphMEB2qQjBiDfCbm4x",
     "GZmUDsn8W1rtopeTgwVgab9rsRGMLVVMfsXwWKD1VS9p",
     "Gfds2Ur4UVKwuwVSt8yvycYdH1vfwnf6i8TaWdf73Pn7",
@@ -241,24 +212,74 @@
       "fired": 0
     },
     {
+      "rule": "sandwich_min_share",
+      "value": 0.1,
+      "fired": 80
+    },
+    {
+      "rule": "sandwich_min_share",
+      "value": 0.15,
+      "fired": 79
+    },
+    {
+      "rule": "sandwich_min_share",
+      "value": 0.2,
+      "fired": 67
+    },
+    {
+      "rule": "sandwich_min_share",
+      "value": 0.3,
+      "fired": 53
+    },
+    {
+      "rule": "sandwich_min_share",
+      "value": 0.4,
+      "fired": 39
+    },
+    {
+      "rule": "sandwich_window_days",
+      "value": 7,
+      "fired": 58
+    },
+    {
+      "rule": "sandwich_window_days",
+      "value": 14,
+      "fired": 60
+    },
+    {
+      "rule": "sandwich_window_days",
+      "value": 30,
+      "fired": 67
+    },
+    {
+      "rule": "sandwich_window_days",
+      "value": 60,
+      "fired": 68
+    },
+    {
+      "rule": "sandwich_window_days",
+      "value": 90,
+      "fired": 72
+    },
+    {
       "rule": "sandwich_max_seconds",
       "value": 30,
-      "fired": 95
+      "fired": 51
     },
     {
       "rule": "sandwich_max_seconds",
       "value": 60,
-      "fired": 95
+      "fired": 65
     },
     {
       "rule": "sandwich_max_seconds",
       "value": 90,
-      "fired": 95
+      "fired": 67
     },
     {
       "rule": "sandwich_max_seconds",
       "value": 180,
-      "fired": 95
+      "fired": 77
     },
     {
       "rule": "genesis_burst",
@@ -299,8 +320,8 @@
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1207,
-        "positions_observed": 446,
-        "quick_round_trips": 285
+        "positions_observed": 787,
+        "quick_round_trips": 387
       },
       "profile": {
         "txs": 1500,
@@ -354,8 +375,8 @@
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 654,
-        "positions_observed": 267,
-        "quick_round_trips": 164
+        "positions_observed": 375,
+        "quick_round_trips": 203
       },
       "profile": {
         "txs": 723,
@@ -404,13 +425,15 @@
     },
     "2hN82SXLUffhG3vxpezRmae1sGrCBMqHHBDxjmjpagqk": {
       "anchor_mint": "7Y7V1a4m2nWK7BMgbka5B4vR1pDvCK7yva3Hnrqkraze",
-      "verdict": "wallet.reject_sandwich",
-      "rule_id": "rule.sandwich",
+      "verdict": "wallet.accepted",
+      "rule_id": null,
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1346,
-        "positions_observed": 68,
-        "quick_round_trips": 37
+        "positions_observed": 120,
+        "quick_round_trips": 60,
+        "aggregator_fraction": 0.0,
+        "direct_pool_swaps": 1346
       },
       "profile": {
         "txs": 1500,
@@ -459,13 +482,15 @@
     },
     "2mQj1wKkRxcgBJizAziAcVUsfC7cc4KmioDy4ssGLnUH": {
       "anchor_mint": "GB68eELgf864nrQHjNvrXHF6Xywpp1kYsb7fsGBupump",
-      "verdict": "wallet.reject_sandwich",
-      "rule_id": "rule.sandwich",
+      "verdict": "wallet.accepted",
+      "rule_id": null,
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 1273,
-        "positions_observed": 584,
-        "quick_round_trips": 440
+        "positions_observed": 687,
+        "quick_round_trips": 3,
+        "aggregator_fraction": 0.0157,
+        "direct_pool_swaps": 1253
       },
       "profile": {
         "txs": 1500,
@@ -519,8 +544,8 @@
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 1073,
-        "positions_observed": 270,
-        "quick_round_trips": 154
+        "positions_observed": 815,
+        "quick_round_trips": 351
       },
       "profile": {
         "txs": 1409,
@@ -574,8 +599,8 @@
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1104,
-        "positions_observed": 279,
-        "quick_round_trips": 150
+        "positions_observed": 824,
+        "quick_round_trips": 428
       },
       "profile": {
         "txs": 1500,
@@ -679,13 +704,15 @@
     },
     "365ox2yoGYXQfzubohqCgzhg2MrG5PKxBRi4p9gpNQGi": {
       "anchor_mint": "GB68eELgf864nrQHjNvrXHF6Xywpp1kYsb7fsGBupump",
-      "verdict": "wallet.reject_sandwich",
-      "rule_id": "rule.sandwich",
+      "verdict": "wallet.accepted",
+      "rule_id": null,
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 421,
-        "positions_observed": 170,
-        "quick_round_trips": 146
+        "positions_observed": 233,
+        "quick_round_trips": 2,
+        "aggregator_fraction": 0.0143,
+        "direct_pool_swaps": 415
       },
       "profile": {
         "txs": 1500,
@@ -739,8 +766,8 @@
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 215,
-        "positions_observed": 67,
-        "quick_round_trips": 36
+        "positions_observed": 126,
+        "quick_round_trips": 31
       },
       "profile": {
         "txs": 269,
@@ -794,8 +821,8 @@
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 1194,
-        "positions_observed": 338,
-        "quick_round_trips": 322
+        "positions_observed": 708,
+        "quick_round_trips": 550
       },
       "profile": {
         "txs": 1500,
@@ -849,8 +876,8 @@
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 1174,
-        "positions_observed": 339,
-        "quick_round_trips": 322
+        "positions_observed": 707,
+        "quick_round_trips": 548
       },
       "profile": {
         "txs": 1486,
@@ -904,8 +931,8 @@
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 501,
-        "positions_observed": 201,
-        "quick_round_trips": 145
+        "positions_observed": 287,
+        "quick_round_trips": 155
       },
       "profile": {
         "txs": 577,
@@ -959,8 +986,8 @@
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1104,
-        "positions_observed": 274,
-        "quick_round_trips": 274
+        "positions_observed": 289,
+        "quick_round_trips": 289
       },
       "profile": {
         "txs": 1500,
@@ -1009,13 +1036,13 @@
     },
     "3TB4EwTwSrkWgjubYYbd6JNmVcTSJ44EgMMwKm8HZABQ": {
       "anchor_mint": "zj1jpp7QMveWHLs61vL9KMZf254KvW7j4AAmBF8ry2k",
-      "verdict": "wallet.reject_sandwich",
-      "rule_id": "rule.sandwich",
+      "verdict": "wallet.reject_throughput",
+      "rule_id": "rule.throughput",
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1331,
-        "positions_observed": 217,
-        "quick_round_trips": 209
+        "positions_observed": 229,
+        "swaps_per_day": 4599.57
       },
       "profile": {
         "txs": 1500,
@@ -1064,38 +1091,37 @@
     },
     "3gHrfi6t4xG2KEH4gga9HxLRYqws9iTKdkLG55NwaTZJ": {
       "anchor_mint": "zj1jpp7QMveWHLs61vL9KMZf254KvW7j4AAmBF8ry2k",
-      "verdict": "wallet.reject_sandwich",
-      "rule_id": "rule.sandwich",
+      "verdict": "wallet.reject_throughput",
+      "rule_id": "rule.throughput",
       "measured": {
         "anchors_observed": 0,
-        "swaps_observed": 1007,
-        "positions_observed": 204,
-        "quick_round_trips": 92
+        "swaps_observed": 1009,
+        "positions_observed": 712,
+        "swaps_per_day": 510.54
       },
       "profile": {
         "txs": 1500,
         "sample_order": "newest_first",
         "truncated": true,
         "truncated_at": 1500,
-        "span_days": 1.959,
+        "span_days": 1.976,
         "kinds": {
-          "swap": 1007,
-          "transfer": 456,
+          "swap": 1009,
+          "transfer": 454,
           "other": 5
         },
-        "swaps": 1007,
+        "swaps": 1009,
         "distinct_mints": 203,
         "aggregator_swaps": 2,
-        "direct_pool_swaps": 1005,
-        "token_moves_no_venue": 456,
-        "swaps_per_day": 514.1,
-        "median_gap_seconds": 8.0,
+        "direct_pool_swaps": 1007,
+        "token_moves_no_venue": 454,
+        "swaps_per_day": 510.52,
+        "median_gap_seconds": 9.0,
         "distinct_hours": 24,
         "sol_amounts_median": 111005000,
-        "sol_amounts_cv": 1.31,
+        "sol_amounts_cv": 1.302,
         "first_buy_at": {
-          "8x8cPc33dxSoYhzVEpSfdUQCXcoqUxZ4aAzCodkopump": "2026-11-07T01:13:51+00:00",
-          "CgR828u9pdGEYvkJhXi2ED3FWoBzrXxCthqkvXHEpump": "2026-11-07T01:20:08+00:00",
+          "CgR828u9pdGEYvkJhXi2ED3FWoBzrXxCthqkvXHEpump": "2026-11-07T01:23:36+00:00",
           "2xXzR7xV4eQ2uAJ2Z2G4Cg4PWfRqpq9BvXk6qEENVCHD": "2026-11-07T01:27:21+00:00",
           "B4CfujPWFkyAsyGW2M16cDQYpT5vZq5srDPoGkN1boob": "2026-11-07T01:27:35+00:00",
           "7uxMRWKvCB7MQSxRUh4HNeWn2C6ARDMfTxQMM7PVpump": "2026-11-07T01:33:34+00:00",
@@ -1113,7 +1139,8 @@
           "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn": "2026-11-07T02:18:00+00:00",
           "C5xph2yL6gMdxmuLGxJBkGpmuDFfyi5fqkBNhvL6pump": "2026-11-07T02:34:37+00:00",
           "DC7NF48d7RHBrM7YVMHfRsFLzZcc53W8q9zLDsW9pump": "2026-11-07T03:19:39+00:00",
-          "CARDSccUMFKoPRZxt5vt3ksUbxEFEcnZ3H2pd3dKxYjp": "2026-11-07T03:48:26+00:00"
+          "CARDSccUMFKoPRZxt5vt3ksUbxEFEcnZ3H2pd3dKxYjp": "2026-11-07T03:48:26+00:00",
+          "SQQQAa3gUxgnqcEsdjPA4RQNQBgB97TnG2hJhk2WaGE": "2026-11-07T07:51:57+00:00"
         }
       }
     },
@@ -1124,8 +1151,8 @@
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 511,
-        "positions_observed": 240,
-        "quick_round_trips": 229
+        "positions_observed": 266,
+        "quick_round_trips": 62
       },
       "profile": {
         "txs": 528,
@@ -1174,13 +1201,15 @@
     },
     "42NxDyCL4uyLa4MtHPSaBL8zfwu4RUtXrMjJpsFqQ7wZ": {
       "anchor_mint": "zj1jpp7QMveWHLs61vL9KMZf254KvW7j4AAmBF8ry2k",
-      "verdict": "wallet.reject_sandwich",
-      "rule_id": "rule.sandwich",
+      "verdict": "wallet.accepted",
+      "rule_id": null,
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 1053,
-        "positions_observed": 424,
-        "quick_round_trips": 162
+        "positions_observed": 554,
+        "quick_round_trips": 21,
+        "aggregator_fraction": 0.0,
+        "direct_pool_swaps": 1053
       },
       "profile": {
         "txs": 1500,
@@ -1229,13 +1258,13 @@
     },
     "52NUhyYcpwwycY2To1bLMtp6pjDjtUMFeUqQxZfBJgAt": {
       "anchor_mint": "zj1jpp7QMveWHLs61vL9KMZf254KvW7j4AAmBF8ry2k",
-      "verdict": "wallet.reject_sandwich",
-      "rule_id": "rule.sandwich",
+      "verdict": "wallet.reject_throughput",
+      "rule_id": "rule.throughput",
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1462,
-        "positions_observed": 22,
-        "quick_round_trips": 21
+        "positions_observed": 23,
+        "swaps_per_day": 11226.16
       },
       "profile": {
         "txs": 1500,
@@ -1288,37 +1317,34 @@
       "rule_id": "rule.sandwich",
       "measured": {
         "anchors_observed": 0,
-        "swaps_observed": 794,
-        "positions_observed": 229,
-        "quick_round_trips": 164
+        "swaps_observed": 787,
+        "positions_observed": 550,
+        "quick_round_trips": 295
       },
       "profile": {
         "txs": 1500,
         "sample_order": "newest_first",
         "truncated": true,
         "truncated_at": 1500,
-        "span_days": 3.973,
+        "span_days": 3.97,
         "kinds": {
-          "swap": 794,
-          "transfer": 106,
+          "swap": 787,
+          "transfer": 111,
           "other": 8
         },
-        "swaps": 794,
-        "distinct_mints": 223,
+        "swaps": 787,
+        "distinct_mints": 226,
         "aggregator_swaps": 3,
-        "direct_pool_swaps": 791,
-        "token_moves_no_venue": 106,
-        "swaps_per_day": 199.84,
-        "median_gap_seconds": 36.0,
+        "direct_pool_swaps": 784,
+        "token_moves_no_venue": 111,
+        "swaps_per_day": 198.23,
+        "median_gap_seconds": 35.0,
         "distinct_hours": 24,
-        "sol_amounts_median": 1236014068,
-        "sol_amounts_cv": 1.069,
+        "sol_amounts_median": 1262112276,
+        "sol_amounts_cv": 1.06,
         "first_buy_at": {
-          "9GGGhze1NnQwcABTzxdxx89BEFLFtDueHhkwh6japump": "2026-11-05T00:35:53+00:00",
-          "C5xph2yL6gMdxmuLGxJBkGpmuDFfyi5fqkBNhvL6pump": "2026-11-05T00:40:59+00:00",
-          "9A9vMe8m78yWJpKv7DqgTSSNHSKKeF64neivVkripump": "2026-11-05T00:49:26+00:00",
-          "94rXu4eBVB5Nk6JASW6JCru7P6yfSNzEdprwonMupump": "2026-11-05T01:26:19+00:00",
           "5aEzHDTYnsKD2kred5KqZJhHoqfXWcvj3HNm5rf3pump": "2026-11-05T01:36:31+00:00",
+          "C5xph2yL6gMdxmuLGxJBkGpmuDFfyi5fqkBNhvL6pump": "2026-11-05T01:40:10+00:00",
           "ADvbwD9pgBeHHQBmBaiUir4zjC946FW2mDJbSejmpump": "2026-11-05T01:41:05+00:00",
           "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn": "2026-11-05T01:43:54+00:00",
           "4RF2BdkKEt3ijsDtcqyCebYJKcEKFQ54EvmW7NxQ6uko": "2026-11-05T02:05:33+00:00",
@@ -1333,19 +1359,24 @@
           "BmWWdMjgjUJVrQGyMeB9W9jvhwepx931qpfrNv2npump": "2026-11-05T04:38:20+00:00",
           "8KmFiXrnzXRtH2FUjizRT7v5VG9DVAb5vKU3fHwPpump": "2026-11-05T16:14:26+00:00",
           "dFybjfpAbTxjen9Ux2Q2dQSFTmrbcVRzYsGoiV5pump": "2026-11-05T17:02:09+00:00",
-          "8nKgAKi54c1bWkpLoAvun1w3tagsHfqxhp9tRcXfqmd2": "2026-11-05T17:55:12+00:00"
+          "8nKgAKi54c1bWkpLoAvun1w3tagsHfqxhp9tRcXfqmd2": "2026-11-05T17:55:12+00:00",
+          "PreweJYECqtQwBtpxHL171nL2K6umo692gTm7Q3rpgF": "2026-11-05T17:55:12+00:00",
+          "Gi6TTJfRiS7vct9yMHAEd58NiLv9Ywg87LErLpKiHaQb": "2026-11-05T18:43:52+00:00",
+          "Fa93AEKdk5GJovkJseEjQ4geYuadFLimbKgy3BiPwiwS": "2026-11-05T18:44:54+00:00"
         }
       }
     },
     "56eGmWrgsm7q7bxnY8fWjo39iDbuLLU4nJKw34BuYMeL": {
       "anchor_mint": "GB68eELgf864nrQHjNvrXHF6Xywpp1kYsb7fsGBupump",
-      "verdict": "wallet.reject_sandwich",
-      "rule_id": "rule.sandwich",
+      "verdict": "wallet.accepted",
+      "rule_id": null,
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 663,
-        "positions_observed": 189,
-        "quick_round_trips": 43
+        "positions_observed": 455,
+        "quick_round_trips": 3,
+        "aggregator_fraction": 0.0,
+        "direct_pool_swaps": 663
       },
       "profile": {
         "txs": 812,
@@ -1398,31 +1429,31 @@
       "rule_id": "rule.sandwich",
       "measured": {
         "anchors_observed": 0,
-        "swaps_observed": 1317,
-        "positions_observed": 377,
-        "quick_round_trips": 186
+        "swaps_observed": 1315,
+        "positions_observed": 844,
+        "quick_round_trips": 378
       },
       "profile": {
         "txs": 1500,
         "sample_order": "newest_first",
         "truncated": true,
         "truncated_at": 1500,
-        "span_days": 6.837,
+        "span_days": 6.853,
         "kinds": {
-          "swap": 1317,
-          "transfer": 129,
+          "swap": 1315,
+          "transfer": 131,
           "other": 4
         },
-        "swaps": 1317,
-        "distinct_mints": 360,
+        "swaps": 1315,
+        "distinct_mints": 361,
         "aggregator_swaps": 2,
-        "direct_pool_swaps": 1315,
-        "token_moves_no_venue": 129,
-        "swaps_per_day": 192.62,
+        "direct_pool_swaps": 1313,
+        "token_moves_no_venue": 131,
+        "swaps_per_day": 191.89,
         "median_gap_seconds": 43.0,
         "distinct_hours": 24,
-        "sol_amounts_median": 368810051,
-        "sol_amounts_cv": 0.915,
+        "sol_amounts_median": 370367489,
+        "sol_amounts_cv": 0.909,
         "first_buy_at": {
           "BzcrimppdEGyDdYUGLdV1TacQJiud2vmFBukskz8pump": "2026-11-02T03:59:10+00:00",
           "6faqw18f3wGpvkpFBa2fRdTYAANUbMQANScbnyGMpump": "2026-11-02T04:03:12+00:00",
@@ -1454,8 +1485,8 @@
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 682,
-        "positions_observed": 193,
-        "quick_round_trips": 43
+        "positions_observed": 465,
+        "quick_round_trips": 3
       },
       "profile": {
         "txs": 833,
@@ -1545,8 +1576,8 @@
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1410,
-        "positions_observed": 550,
-        "quick_round_trips": 530
+        "positions_observed": 800,
+        "quick_round_trips": 740
       },
       "profile": {
         "txs": 1500,
@@ -1600,8 +1631,8 @@
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 799,
-        "positions_observed": 229,
-        "quick_round_trips": 174
+        "positions_observed": 582,
+        "quick_round_trips": 398
       },
       "profile": {
         "txs": 899,
@@ -1655,8 +1686,8 @@
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 449,
-        "positions_observed": 168,
-        "quick_round_trips": 143
+        "positions_observed": 272,
+        "quick_round_trips": 17
       },
       "profile": {
         "txs": 614,
@@ -1710,8 +1741,8 @@
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1341,
-        "positions_observed": 594,
-        "quick_round_trips": 582
+        "positions_observed": 595,
+        "quick_round_trips": 60
       },
       "profile": {
         "txs": 1500,
@@ -1765,8 +1796,8 @@
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 427,
-        "positions_observed": 176,
-        "quick_round_trips": 114
+        "positions_observed": 251,
+        "quick_round_trips": 116
       },
       "profile": {
         "txs": 471,
@@ -1815,13 +1846,15 @@
     },
     "7RCqvciFbU5nYL4feUPq49DmEJpdT3aYqkhgtv96Y1XY": {
       "anchor_mint": "zj1jpp7QMveWHLs61vL9KMZf254KvW7j4AAmBF8ry2k",
-      "verdict": "wallet.reject_sandwich",
-      "rule_id": "rule.sandwich",
+      "verdict": "wallet.accepted",
+      "rule_id": null,
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1334,
-        "positions_observed": 463,
-        "quick_round_trips": 152
+        "positions_observed": 852,
+        "quick_round_trips": 213,
+        "aggregator_fraction": 0.0,
+        "direct_pool_swaps": 1334
       },
       "profile": {
         "txs": 1500,
@@ -1870,13 +1903,15 @@
     },
     "7SHjoR1juE7ZK2RGT1XgDZLUs8MbgcDeVveBa1HqXATW": {
       "anchor_mint": "7Y7V1a4m2nWK7BMgbka5B4vR1pDvCK7yva3Hnrqkraze",
-      "verdict": "wallet.reject_sandwich",
-      "rule_id": "rule.sandwich",
+      "verdict": "wallet.accepted",
+      "rule_id": null,
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 1421,
-        "positions_observed": 578,
-        "quick_round_trips": 278
+        "positions_observed": 791,
+        "quick_round_trips": 2,
+        "aggregator_fraction": 0.0056,
+        "direct_pool_swaps": 1413
       },
       "profile": {
         "txs": 1500,
@@ -1925,20 +1960,22 @@
     },
     "7WPMy3C639ETRNHuNedEe2HKEvwHYFgUP4wXwymBmXEg": {
       "anchor_mint": "91ryaCo5yGpYZM3bs6GUPs97VWJQj7RozBmqPULgpump",
-      "verdict": "wallet.reject_sandwich",
-      "rule_id": "rule.sandwich",
+      "verdict": "wallet.accepted",
+      "rule_id": null,
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1397,
-        "positions_observed": 98,
-        "quick_round_trips": 32
+        "positions_observed": 255,
+        "quick_round_trips": 9,
+        "aggregator_fraction": 0.0014,
+        "direct_pool_swaps": 1395
       },
       "profile": {
         "txs": 1500,
         "sample_order": "newest_first",
         "truncated": true,
         "truncated_at": 1500,
-        "span_days": 45.147,
+        "span_days": 45.189,
         "kinds": {
           "swap": 1397,
           "transfer": 52,
@@ -1949,11 +1986,11 @@
         "aggregator_swaps": 2,
         "direct_pool_swaps": 1395,
         "token_moves_no_venue": 52,
-        "swaps_per_day": 30.94,
+        "swaps_per_day": 30.91,
         "median_gap_seconds": 836.0,
         "distinct_hours": 24,
         "sol_amounts_median": 0,
-        "sol_amounts_cv": 3.776,
+        "sol_amounts_cv": 3.786,
         "first_buy_at": {
           "7wGa42FJACh43MqBkypX9iEA5q5V2AsrUC3zY3s5AdMP": "2026-09-24T20:54:00+00:00",
           "6KiFaJnuM2Sr8ivA47fCYk5GjCr2fhwM6pGfBg5JeYnh": "2026-09-24T21:23:00+00:00",
@@ -1984,43 +2021,38 @@
       "rule_id": "rule.sandwich",
       "measured": {
         "anchors_observed": 0,
-        "swaps_observed": 1444,
-        "positions_observed": 703,
-        "quick_round_trips": 509
+        "swaps_observed": 1443,
+        "positions_observed": 714,
+        "quick_round_trips": 512
       },
       "profile": {
         "txs": 1500,
         "sample_order": "newest_first",
         "truncated": true,
         "truncated_at": 1500,
-        "span_days": 1.956,
+        "span_days": 1.97,
         "kinds": {
-          "swap": 1444,
+          "swap": 1443,
           "transfer": 0,
           "other": 0
         },
-        "swaps": 1444,
+        "swaps": 1443,
         "distinct_mints": 593,
         "aggregator_swaps": 0,
-        "direct_pool_swaps": 1444,
+        "direct_pool_swaps": 1443,
         "token_moves_no_venue": 0,
-        "swaps_per_day": 738.07,
+        "swaps_per_day": 732.35,
         "median_gap_seconds": 43.0,
         "distinct_hours": 24,
-        "sol_amounts_median": 252158745,
-        "sol_amounts_cv": 0.398,
+        "sol_amounts_median": 251212929,
+        "sol_amounts_cv": 0.396,
         "first_buy_at": {
-          "2xXzR7xV4eQ2uAJ2Z2G4Cg4PWfRqpq9BvXk6qEENVCHD": "2026-11-07T01:08:21+00:00",
-          "6MirdmcPpW2KmbfZ4ufAzbqrpC1LnGuqQWHJuUFNpump": "2026-11-07T01:09:12+00:00",
-          "Bfi13U5bxWDqVKc9T2hpi2WfjV2Pjb8y29g72kYvJdRr": "2026-11-07T01:12:10+00:00",
-          "8x8cPc33dxSoYhzVEpSfdUQCXcoqUxZ4aAzCodkopump": "2026-11-07T01:16:06+00:00",
-          "7uxMRWKvCB7MQSxRUh4HNeWn2C6ARDMfTxQMM7PVpump": "2026-11-07T01:25:07+00:00",
-          "FeAYzP7UGgNoEpdjLMAwaatHyWr7KdsoUfEtuCzUpump": "2026-11-07T01:27:26+00:00",
           "8qDhhTmWwnPwrNQWXn6XqWvrxKBMoJ4DGL1WbMmjpump": "2026-11-07T01:28:02+00:00",
           "AN4U5tto7vrwgWn9ukYW16QLfBHYUzQGtxpCchcYpump": "2026-11-07T01:30:31+00:00",
           "BKvjmtidJCeDNtryFyVgJaVu8oLdKZMix9xW61Sepump": "2026-11-07T01:31:33+00:00",
           "ANBAxZegSbxZNhP2H3q3jRt8aGEqCeVYj6myeyaMpump": "2026-11-07T01:32:15+00:00",
           "8dXrVBotYqBaFWgARe4xPxKcCGTHZdEXZwnCvdNbpump": "2026-11-07T01:32:56+00:00",
+          "7uxMRWKvCB7MQSxRUh4HNeWn2C6ARDMfTxQMM7PVpump": "2026-11-07T01:33:01+00:00",
           "BPAf83sLngNw65raUdEGEPT1rUpARxSmKfhYAPGupump": "2026-11-07T01:33:53+00:00",
           "A8D31cWhC1PdjMghwLCEnTE6d5m7fXhPZkxqjcRHpump": "2026-11-07T01:37:25+00:00",
           "So11111111111111111111111111111111111111112": "2026-11-07T01:38:30+00:00",
@@ -2029,19 +2061,26 @@
           "2wKbJVpZxFyNt9iFw6vVYRGHvyj6H4ehEn6ZCDJipump": "2026-11-07T01:41:13+00:00",
           "Cp4CP87btbi6r5ksbcdEtTFo3iqMho3FbYcdRqe7pump": "2026-11-07T01:42:45+00:00",
           "DfotUMSVeFmDCKcDJFUjXnPGU5QWyQBKVykawswKpump": "2026-11-07T01:46:52+00:00",
-          "F2agq1YQbGcw98tHYaEufdXhQVQMTaALpPs4rWyXpump": "2026-11-07T01:47:32+00:00"
+          "F2agq1YQbGcw98tHYaEufdXhQVQMTaALpPs4rWyXpump": "2026-11-07T01:47:32+00:00",
+          "78mQFH41jTWj5Fb5onii8mwoNdejL3sQyUNNbAMYpump": "2026-11-07T02:00:49+00:00",
+          "GT2KFLgXfYHSzWxNpvpaFfo5rYtaFBjvkpSf1zwgpump": "2026-11-07T02:05:11+00:00",
+          "3dPdp4eCR8yVwkwM2DMAThUAR7Tu4sQ9BdvtHZNepump": "2026-11-07T02:05:14+00:00",
+          "BC6XeuTZ7mq1uM7HeXbSnWebA62cdK6eJQcqFqt5pump": "2026-11-07T02:05:20+00:00",
+          "Ab4ReAPC8jmVvrJxUxdMXXNF4kseis1rStMx6Y6cpump": "2026-11-07T02:06:46+00:00"
         }
       }
     },
     "8GSDbEhMy3LbuLnqyb1ehQr1wwX3yiMN5pL98NnEM32a": {
       "anchor_mint": "91ryaCo5yGpYZM3bs6GUPs97VWJQj7RozBmqPULgpump",
-      "verdict": "wallet.reject_sandwich",
-      "rule_id": "rule.sandwich",
+      "verdict": "wallet.accepted",
+      "rule_id": null,
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1260,
-        "positions_observed": 212,
-        "quick_round_trips": 207
+        "positions_observed": 220,
+        "quick_round_trips": 215,
+        "aggregator_fraction": 0.0,
+        "direct_pool_swaps": 1260
       },
       "profile": {
         "txs": 1500,
@@ -2090,13 +2129,15 @@
     },
     "8NfcAge8C5jdGM4HcuZj9M8KajRaZ2h9Azp5UuTzh9k5": {
       "anchor_mint": "EVgwa5CHBVwk6sCTa4QJrVXYBKngZhYqh2a2ZGDApump",
-      "verdict": "wallet.reject_sandwich",
-      "rule_id": "rule.sandwich",
+      "verdict": "wallet.accepted",
+      "rule_id": null,
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 494,
-        "positions_observed": 225,
-        "quick_round_trips": 40
+        "positions_observed": 267,
+        "quick_round_trips": 44,
+        "aggregator_fraction": 0.0,
+        "direct_pool_swaps": 494
       },
       "profile": {
         "txs": 570,
@@ -2145,13 +2186,15 @@
     },
     "8a6JShiMBwKrYN9b62o7aJtDcobDwXmTudai6PpRy18k": {
       "anchor_mint": "GB68eELgf864nrQHjNvrXHF6Xywpp1kYsb7fsGBupump",
-      "verdict": "wallet.reject_sandwich",
-      "rule_id": "rule.sandwich",
+      "verdict": "wallet.accepted",
+      "rule_id": null,
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 207,
-        "positions_observed": 83,
-        "quick_round_trips": 30
+        "positions_observed": 116,
+        "quick_round_trips": 27,
+        "aggregator_fraction": 0.0097,
+        "direct_pool_swaps": 205
       },
       "profile": {
         "txs": 691,
@@ -2200,20 +2243,22 @@
     },
     "8aXuJ2X76cDF2wfWWfyzGnscbomZt3w15b2vqaPGpCE": {
       "anchor_mint": "91ryaCo5yGpYZM3bs6GUPs97VWJQj7RozBmqPULgpump",
-      "verdict": "wallet.reject_sandwich",
-      "rule_id": "rule.sandwich",
+      "verdict": "wallet.accepted",
+      "rule_id": null,
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1477,
-        "positions_observed": 98,
-        "quick_round_trips": 37
+        "positions_observed": 1239,
+        "quick_round_trips": 92,
+        "aggregator_fraction": 0.0007,
+        "direct_pool_swaps": 1476
       },
       "profile": {
         "txs": 1500,
         "sample_order": "newest_first",
         "truncated": true,
         "truncated_at": 1500,
-        "span_days": 10.41,
+        "span_days": 10.442,
         "kinds": {
           "swap": 1477,
           "transfer": 13,
@@ -2224,11 +2269,11 @@
         "aggregator_swaps": 1,
         "direct_pool_swaps": 1476,
         "token_moves_no_venue": 13,
-        "swaps_per_day": 141.89,
-        "median_gap_seconds": 210.0,
+        "swaps_per_day": 141.44,
+        "median_gap_seconds": 212.0,
         "distinct_hours": 24,
         "sol_amounts_median": 0,
-        "sol_amounts_cv": 1.955,
+        "sol_amounts_cv": 1.965,
         "first_buy_at": {
           "25NVbDfwuAVhb2XADxGCs6WQuPjU1RsgDfUG6GV132Tm": "2026-10-29T14:23:12+00:00",
           "9EaMq6kgNnVs6M3Rs7ccXppATd9GraYP1NJBBvRtdND6": "2026-10-29T14:37:37+00:00",
@@ -2260,7 +2305,7 @@
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1316,
-        "positions_observed": 655,
+        "positions_observed": 656,
         "quick_round_trips": 603
       },
       "profile": {
@@ -2315,8 +2360,8 @@
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1350,
-        "positions_observed": 535,
-        "quick_round_trips": 487
+        "positions_observed": 767,
+        "quick_round_trips": 633
       },
       "profile": {
         "txs": 1500,
@@ -2370,8 +2415,8 @@
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1434,
-        "positions_observed": 323,
-        "quick_round_trips": 315
+        "positions_observed": 1268,
+        "quick_round_trips": 1175
       },
       "profile": {
         "txs": 1500,
@@ -2424,52 +2469,52 @@
       "rule_id": "rule.sandwich",
       "measured": {
         "anchors_observed": 0,
-        "swaps_observed": 1481,
-        "positions_observed": 730,
-        "quick_round_trips": 490
+        "swaps_observed": 1480,
+        "positions_observed": 731,
+        "quick_round_trips": 494
       },
       "profile": {
         "txs": 1500,
         "sample_order": "newest_first",
         "truncated": true,
         "truncated_at": 1500,
-        "span_days": 1.758,
+        "span_days": 1.767,
         "kinds": {
-          "swap": 1481,
+          "swap": 1480,
           "transfer": 5,
           "other": 0
         },
-        "swaps": 1481,
+        "swaps": 1480,
         "distinct_mints": 620,
         "aggregator_swaps": 0,
-        "direct_pool_swaps": 1481,
+        "direct_pool_swaps": 1480,
         "token_moves_no_venue": 5,
-        "swaps_per_day": 842.56,
-        "median_gap_seconds": 49.0,
+        "swaps_per_day": 837.67,
+        "median_gap_seconds": 50.0,
         "distinct_hours": 24,
-        "sol_amounts_median": 111646846,
-        "sol_amounts_cv": 0.597,
+        "sol_amounts_median": 111526925,
+        "sol_amounts_cv": 0.6,
         "first_buy_at": {
-          "4PxB495BG41d1cBXMwbx9vKqmemBuRoCfZv14PQGpump": "2026-11-07T05:51:28+00:00",
-          "Cpwk3gwyWd9whTasJjiQDjwaSV3ZF1VGYEL93MCqoBHW": "2026-11-07T05:59:45+00:00",
-          "5fTgagsk5BcKsrev9jJaaaK2gezbrfBvA42Mgxpjpump": "2026-11-07T06:00:28+00:00",
-          "cgHU9dSsPCLQVSxCHSGY9SnZwgwfi6Y9E4rQvjTpump": "2026-11-07T06:01:18+00:00",
-          "So11111111111111111111111111111111111111112": "2026-11-07T06:03:28+00:00",
-          "Cn9kx7xVWcz7V5uTmDaVuUgnbYWwz5H24bTk7tVzpump": "2026-11-07T06:05:59+00:00",
-          "6WAVS6v6wkSaxN2UQw1bZeN3nmkydGi4MSe4DGhQpump": "2026-11-07T06:08:18+00:00",
-          "A5Y2BEXahnJ2zt7Nrmhgifvi9EqF4ywsZreyYpAtpump": "2026-11-07T06:08:34+00:00",
-          "ByeAwTUXydHVjccSnV1fYUdxAQmRiLzxFuFhyqJ9pump": "2026-11-07T06:13:37+00:00",
-          "GYg3HLvjBnPGCZSCGyaUKyTkZJmzCrXp29ReEWbxpump": "2026-11-07T06:14:01+00:00",
-          "AR5J4YWvB2Jq9ZWhUwQxkhEqFwD2J5119CM26tApump": "2026-11-07T06:14:58+00:00",
-          "ERMqWDZQYHRwfJiiG83wMZPeXJwYhoF57Q8bRwDcpump": "2026-11-07T06:17:11+00:00",
-          "7MzqMi9kAUktZzNZ9ShYcMcsscbUDcivmmjVGzZWpump": "2026-11-07T06:20:30+00:00",
-          "2sG8higWkP9xBrwATFeRfxRKuTZo4WoWUeecEfh3pump": "2026-11-07T06:23:47+00:00",
-          "62b9kJZ9wYtx3yHJwv4xbPEMPinsGhhrDKd4wf4NKo8a": "2026-11-07T06:26:11+00:00",
           "FpUtpHmLH37zEym49jqYYq3TcKCVDMsEm1KnQKFRpump": "2026-11-07T06:28:28+00:00",
           "F5FK6C64dACWNsyQkfSfm4Z53uwYubPAPGLSGirhpump": "2026-11-07T06:40:27+00:00",
           "4C6LMX3q8iwShzW6j6A71NAUCgZ9G72T93hh4bKDpump": "2026-11-07T06:41:48+00:00",
           "DAo5a4R6jvoCtDMdQycBhU7zgKVYZS8wCbp2Yjvtpump": "2026-11-07T06:42:25+00:00",
-          "4iy5bDrHifNsDMyt7SZfhe84KJtqndKRjWz6iiL3pump": "2026-11-07T06:45:22+00:00"
+          "4iy5bDrHifNsDMyt7SZfhe84KJtqndKRjWz6iiL3pump": "2026-11-07T06:45:22+00:00",
+          "5uxmfv7LEng5zjC1rsrbrMULw4yttUQa6xZPpa6ipump": "2026-11-07T06:49:27+00:00",
+          "BXKRFEWG1NdYXhmVnSthwTaaUF2FUMFMXAm9jirTpump": "2026-11-07T06:52:05+00:00",
+          "BwhQNpUY6CuWuu73UAuBJNuUCbseeBrtq6taCD7Mpump": "2026-11-07T06:53:39+00:00",
+          "6psruuGkna3YAcyh6gEK7XaHqiKiruR5B9qxWUgXpump": "2026-11-07T06:58:00+00:00",
+          "ACCRpLKD6hmsjeJKTDbxCjWpEGwaC7gT5dg6gmpFpump": "2026-11-07T07:04:25+00:00",
+          "Ef8veCkBGFnovD9ZHLx7draEU2EkLjs1yvNq744jpump": "2026-11-07T07:07:21+00:00",
+          "FjL56Gqzq6iiWLQeFQNriThsRHGyc5s8mJjfiREcpump": "2026-11-07T07:08:53+00:00",
+          "AyWbm94duWa3JySwhSau2CRS3MYgW5CFicSv4uErpump": "2026-11-07T07:13:38+00:00",
+          "jTUbWrLUYNmEzZTuUwpLNU6z2DrnmVPGko51wF4pump": "2026-11-07T07:15:16+00:00",
+          "AQyNCyZzDbLC1HJ5n5wui3o64FAU2y3pLYvnkr2iCaf4": "2026-11-07T07:24:17+00:00",
+          "DyMkA8aGRFWQQDKttwR1b2trZ9eiRw8byKMkjNpupump": "2026-11-07T07:29:21+00:00",
+          "27dqL7RLs2tD96G38dASNpPPhE9xKNAfCbWwTkNFpump": "2026-11-07T07:41:23+00:00",
+          "7WkvTuALPV9CFG6GTUAhQco2QqxuzwTbrtGGLsBhpump": "2026-11-07T07:46:30+00:00",
+          "hamp83cq5UUm1vkT89CbVNYpkCGqLEiHKDSZUnNpump": "2026-11-07T07:53:09+00:00",
+          "AE6sXQovttRqQsYybx7rDp3MTwGjViK5cqYyvA3tpump": "2026-11-07T07:58:06+00:00"
         }
       }
     },
@@ -2480,8 +2525,8 @@
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1276,
-        "positions_observed": 554,
-        "quick_round_trips": 317
+        "positions_observed": 713,
+        "quick_round_trips": 339
       },
       "profile": {
         "txs": 1500,
@@ -2535,8 +2580,8 @@
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1243,
-        "positions_observed": 477,
-        "quick_round_trips": 431
+        "positions_observed": 732,
+        "quick_round_trips": 615
       },
       "profile": {
         "txs": 1500,
@@ -2590,8 +2635,8 @@
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1263,
-        "positions_observed": 511,
-        "quick_round_trips": 377
+        "positions_observed": 750,
+        "quick_round_trips": 343
       },
       "profile": {
         "txs": 1500,
@@ -2640,13 +2685,15 @@
     },
     "9U4M3hDNxGprhhetLBUFpwrjtZ3iK4xDbLGijq269WHr": {
       "anchor_mint": "GB68eELgf864nrQHjNvrXHF6Xywpp1kYsb7fsGBupump",
-      "verdict": "wallet.reject_sandwich",
-      "rule_id": "rule.sandwich",
+      "verdict": "wallet.accepted",
+      "rule_id": null,
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1386,
-        "positions_observed": 653,
-        "quick_round_trips": 59
+        "positions_observed": 654,
+        "quick_round_trips": 59,
+        "aggregator_fraction": 0.0007,
+        "direct_pool_swaps": 1385
       },
       "profile": {
         "txs": 1500,
@@ -2700,8 +2747,8 @@
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1164,
-        "positions_observed": 51,
-        "quick_round_trips": 47
+        "positions_observed": 352,
+        "quick_round_trips": 347
       },
       "profile": {
         "txs": 1500,
@@ -2754,31 +2801,31 @@
       "rule_id": "rule.sandwich",
       "measured": {
         "anchors_observed": 0,
-        "swaps_observed": 1307,
-        "positions_observed": 381,
-        "quick_round_trips": 186
+        "swaps_observed": 1305,
+        "positions_observed": 872,
+        "quick_round_trips": 381
       },
       "profile": {
         "txs": 1500,
         "sample_order": "newest_first",
         "truncated": true,
         "truncated_at": 1500,
-        "span_days": 6.839,
+        "span_days": 6.853,
         "kinds": {
-          "swap": 1307,
-          "transfer": 131,
+          "swap": 1305,
+          "transfer": 133,
           "other": 4
         },
-        "swaps": 1307,
-        "distinct_mints": 360,
+        "swaps": 1305,
+        "distinct_mints": 361,
         "aggregator_swaps": 3,
-        "direct_pool_swaps": 1304,
-        "token_moves_no_venue": 131,
-        "swaps_per_day": 191.11,
+        "direct_pool_swaps": 1302,
+        "token_moves_no_venue": 133,
+        "swaps_per_day": 190.43,
         "median_gap_seconds": 46.0,
         "distinct_hours": 24,
-        "sol_amounts_median": 385785549,
-        "sol_amounts_cv": 0.916,
+        "sol_amounts_median": 386463620,
+        "sol_amounts_cv": 0.911,
         "first_buy_at": {
           "BzcrimppdEGyDdYUGLdV1TacQJiud2vmFBukskz8pump": "2026-11-02T03:59:10+00:00",
           "6faqw18f3wGpvkpFBa2fRdTYAANUbMQANScbnyGMpump": "2026-11-02T04:03:12+00:00",
@@ -2809,31 +2856,31 @@
       "rule_id": "rule.sandwich",
       "measured": {
         "anchors_observed": 0,
-        "swaps_observed": 1314,
-        "positions_observed": 376,
-        "quick_round_trips": 186
+        "swaps_observed": 1312,
+        "positions_observed": 849,
+        "quick_round_trips": 378
       },
       "profile": {
         "txs": 1500,
         "sample_order": "newest_first",
         "truncated": true,
         "truncated_at": 1500,
-        "span_days": 6.839,
+        "span_days": 6.853,
         "kinds": {
-          "swap": 1314,
-          "transfer": 128,
+          "swap": 1312,
+          "transfer": 130,
           "other": 5
         },
-        "swaps": 1314,
-        "distinct_mints": 359,
+        "swaps": 1312,
+        "distinct_mints": 360,
         "aggregator_swaps": 3,
-        "direct_pool_swaps": 1311,
-        "token_moves_no_venue": 128,
-        "swaps_per_day": 192.13,
-        "median_gap_seconds": 43.0,
+        "direct_pool_swaps": 1309,
+        "token_moves_no_venue": 130,
+        "swaps_per_day": 191.45,
+        "median_gap_seconds": 44.0,
         "distinct_hours": 24,
-        "sol_amounts_median": 353622518,
-        "sol_amounts_cv": 0.92,
+        "sol_amounts_median": 355785399,
+        "sol_amounts_cv": 0.915,
         "first_buy_at": {
           "BzcrimppdEGyDdYUGLdV1TacQJiud2vmFBukskz8pump": "2026-11-02T03:59:10+00:00",
           "6faqw18f3wGpvkpFBa2fRdTYAANUbMQANScbnyGMpump": "2026-11-02T04:03:12+00:00",
@@ -2860,13 +2907,15 @@
     },
     "AEYXnDo7zKJ9xe9qJMwZQpRBxWUcrppDnur1mozP5bvU": {
       "anchor_mint": "7Y7V1a4m2nWK7BMgbka5B4vR1pDvCK7yva3Hnrqkraze",
-      "verdict": "wallet.reject_sandwich",
-      "rule_id": "rule.sandwich",
+      "verdict": "wallet.accepted",
+      "rule_id": null,
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 959,
-        "positions_observed": 256,
-        "quick_round_trips": 115
+        "positions_observed": 323,
+        "quick_round_trips": 43,
+        "aggregator_fraction": 0.0146,
+        "direct_pool_swaps": 945
       },
       "profile": {
         "txs": 1274,
@@ -2919,52 +2968,52 @@
       "rule_id": "rule.sandwich",
       "measured": {
         "anchors_observed": 0,
-        "swaps_observed": 1283,
-        "positions_observed": 608,
-        "quick_round_trips": 574
+        "swaps_observed": 1293,
+        "positions_observed": 655,
+        "quick_round_trips": 610
       },
       "profile": {
         "txs": 1500,
         "sample_order": "newest_first",
         "truncated": true,
         "truncated_at": 1500,
-        "span_days": 1.176,
+        "span_days": 1.174,
         "kinds": {
-          "swap": 1283,
-          "transfer": 119,
-          "other": 73
+          "swap": 1293,
+          "transfer": 105,
+          "other": 75
         },
-        "swaps": 1283,
-        "distinct_mints": 677,
+        "swaps": 1293,
+        "distinct_mints": 681,
         "aggregator_swaps": 5,
-        "direct_pool_swaps": 1278,
-        "token_moves_no_venue": 119,
-        "swaps_per_day": 1090.96,
+        "direct_pool_swaps": 1288,
+        "token_moves_no_venue": 105,
+        "swaps_per_day": 1101.11,
         "median_gap_seconds": 27.0,
         "distinct_hours": 24,
-        "sol_amounts_median": 759603750,
-        "sol_amounts_cv": 0.451,
+        "sol_amounts_median": 757679983,
+        "sol_amounts_cv": 0.45,
         "first_buy_at": {
-          "9yM6gHKKTtFn2y4oCtjmN5bfdQXj6rPViau1EVxVhBrR": "2026-11-07T19:55:59+00:00",
-          "7XuG3JHVv8SKx37ycmdxD4peJT6dWgRtsBCJe4LApump": "2026-11-07T19:57:17+00:00",
-          "3GEyBB1akFMeAiq7jKoXVygwBnNFkFZ7kxDhiLCFpump": "2026-11-07T19:58:16+00:00",
-          "6TL9QgfwNdZZv1GokU64XVtP5xh7wX5FgutvSdBQpump": "2026-11-07T19:58:48+00:00",
-          "F3cCiTtB5hh7sf2BudYeXm45jPpF4FNbADRjje7MDfrF": "2026-11-07T19:59:11+00:00",
-          "4bv98mUWhxnrVPES5954LivSE1s514cxrSYYChHvpump": "2026-11-07T20:03:15+00:00",
-          "ETFgZTeec9ifWujA7KZtYkdDtYh63eayVYmM1Mm4pump": "2026-11-07T20:10:00+00:00",
-          "Fhy5uJXXNaYrQxteeQc9xET77mrfYMcA8vVrcnSVpump": "2026-11-07T20:10:53+00:00",
-          "GQ3aMW446u8NsccsBrg2S85muaj8fVSnnWkjJQSJpump": "2026-11-07T20:15:27+00:00",
-          "9a1CiGXfjBKuQ6ooj4CPRUVwvyDbDFPDTNCf1488pump": "2026-11-07T20:16:37+00:00",
-          "76EABWAydCs13EcLDCjF9LBUiGaeKuEzoynrGA4fpump": "2026-11-07T20:17:20+00:00",
-          "4FVXNspiS2KTDHXdVcZrbRE8esrKRqG95ctSdAHZpump": "2026-11-07T20:21:31+00:00",
-          "9pG44DVbTrN7c38rV9fAriwwas7adEMshfKYFH4Jpump": "2026-11-07T20:35:50+00:00",
-          "FJ5eiRdhrYVbnUVoZgqcCa9iQfAARVofjj3JNgU9pump": "2026-11-07T20:39:59+00:00",
-          "EhbbeFxMNhHM5SdbR4T7oov8Kpk5JkbUGP2Yt6xSpump": "2026-11-07T20:40:36+00:00",
-          "BMi3pJRgQ3Q6Tba8Pg1kSCq91VNpLpvWFppQ4qD6pump": "2026-11-07T20:40:37+00:00",
           "BfCtziixpDc1Fqn7DTFY9H1gRPXmXxAAitqHdngXpump": "2026-11-07T20:42:54+00:00",
           "2yrDDiRzqC99dukLA8bfHXitpSLMxTgZS6vAhaim8HMp": "2026-11-07T20:43:07+00:00",
           "9gUxgCstNaZPNGck2uPcqHgEkKKLWZDprqNPUWQ4pump": "2026-11-07T20:52:46+00:00",
-          "EXyGFovvEEhhZciY8cuj11zZ4wGyaSwE2gCNhEz7xEAw": "2026-11-07T20:55:04+00:00"
+          "EXyGFovvEEhhZciY8cuj11zZ4wGyaSwE2gCNhEz7xEAw": "2026-11-07T20:55:04+00:00",
+          "9i3nSVV9iyWAQ6zhp4n2FbEw4XRu27ec3fqwg5iipump": "2026-11-07T20:55:50+00:00",
+          "GxYKVPo2FoYW6NvNLhctdUSZ6Hcy2uHb2gMBiyqJpump": "2026-11-07T20:56:14+00:00",
+          "FowtpR8J3WPRnbcMaYMWhnoki4cHFtbWRuYRS48vpump": "2026-11-07T20:57:04+00:00",
+          "9xPVmTfXNfYZoH8eKxRNsDKWn7DEyvMLRwjFFAdpump": "2026-11-07T21:00:23+00:00",
+          "3Y9xMCpmsDUxJkekHw8w7P5wVjv2wRsKmzVaReS2pump": "2026-11-07T21:03:16+00:00",
+          "3qysBJiaDLSPgBKgjq3fGzr7mpdBeLiNJdVjrGUMpump": "2026-11-07T21:03:52+00:00",
+          "EvUnSAW6RkuUZCZEokXVoLaVWYKZdi3ZeMDGP7p7pump": "2026-11-07T21:04:03+00:00",
+          "8rDagpH47vu72YnafP6FdNkdFC5x5farUDehhnLypump": "2026-11-07T21:06:45+00:00",
+          "GYRMq2ZY1QC7U6amifqbwC8LmyNsuMGUD86L2Dsppump": "2026-11-07T21:07:41+00:00",
+          "AJstYZZaqefzJqTJcbcRuz2H4Xo1oZ9TGDgyxNBipump": "2026-11-07T21:09:04+00:00",
+          "B77YcgAKrUw4sRVYvuj77UxKEZ3Cc96GoJmbSLycpump": "2026-11-07T21:10:09+00:00",
+          "CgiBo5LNTHdG3konprKw5G4sTxFG6cihEHLTtAgFpump": "2026-11-07T21:15:30+00:00",
+          "52GvL3R9GrhH8JGRsUbY4ADq2G2yhbUEzbk4pGU9pump": "2026-11-07T21:17:42+00:00",
+          "H3QN67yEnKDBytRiVxfVGxQV8NHw9W4AX2QqoAucmeeP": "2026-11-07T21:19:02+00:00",
+          "6QQLQgBzsRSWYZFLigzArm39aP5B3Htr1dX3BFBUpump": "2026-11-07T21:21:10+00:00",
+          "AyjhDRHh38LwfuMVjmQjKk4gdozCFM8EYPTwfaq2pump": "2026-11-07T21:22:43+00:00"
         }
       }
     },
@@ -2975,8 +3024,8 @@
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 435,
-        "positions_observed": 185,
-        "quick_round_trips": 80
+        "positions_observed": 221,
+        "quick_round_trips": 23
       },
       "profile": {
         "txs": 598,
@@ -3085,8 +3134,8 @@
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 1126,
-        "positions_observed": 442,
-        "quick_round_trips": 392
+        "positions_observed": 674,
+        "quick_round_trips": 82
       },
       "profile": {
         "txs": 1500,
@@ -3140,8 +3189,8 @@
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 1208,
-        "positions_observed": 400,
-        "quick_round_trips": 381
+        "positions_observed": 766,
+        "quick_round_trips": 720
       },
       "profile": {
         "txs": 1500,
@@ -3245,13 +3294,15 @@
     },
     "B9r6LwaixWL7VB9eSuJb48VWTHjYyhxcHy6a86LAWzzz": {
       "anchor_mint": "91ryaCo5yGpYZM3bs6GUPs97VWJQj7RozBmqPULgpump",
-      "verdict": "wallet.reject_sandwich",
-      "rule_id": "rule.sandwich",
+      "verdict": "wallet.accepted",
+      "rule_id": null,
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 549,
-        "positions_observed": 166,
-        "quick_round_trips": 75
+        "positions_observed": 348,
+        "quick_round_trips": 66,
+        "aggregator_fraction": 0.0273,
+        "direct_pool_swaps": 534
       },
       "profile": {
         "txs": 1500,
@@ -3313,7 +3364,7 @@
         "sample_order": "newest_first",
         "truncated": true,
         "truncated_at": 1500,
-        "span_days": 0.001,
+        "span_days": 0.0,
         "kinds": {
           "swap": 0,
           "transfer": 0,
@@ -3334,13 +3385,15 @@
     },
     "BukaPo9VfTUUCTWcTNzxetNEDA9pxxzWSjt5anYp6zrZ": {
       "anchor_mint": "91ryaCo5yGpYZM3bs6GUPs97VWJQj7RozBmqPULgpump",
-      "verdict": "wallet.reject_sandwich",
-      "rule_id": "rule.sandwich",
+      "verdict": "wallet.accepted",
+      "rule_id": null,
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1389,
-        "positions_observed": 437,
-        "quick_round_trips": 220
+        "positions_observed": 927,
+        "quick_round_trips": 251,
+        "aggregator_fraction": 0.0,
+        "direct_pool_swaps": 1389
       },
       "profile": {
         "txs": 1500,
@@ -3389,20 +3442,22 @@
     },
     "BzDj6PHVMVSPsHW4KW7q8qupTCpQEKtPRLTnKZkvXkdo": {
       "anchor_mint": "91ryaCo5yGpYZM3bs6GUPs97VWJQj7RozBmqPULgpump",
-      "verdict": "wallet.reject_sandwich",
-      "rule_id": "rule.sandwich",
+      "verdict": "wallet.accepted",
+      "rule_id": null,
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1336,
-        "positions_observed": 234,
-        "quick_round_trips": 81
+        "positions_observed": 973,
+        "quick_round_trips": 26,
+        "aggregator_fraction": 0.003,
+        "direct_pool_swaps": 1332
       },
       "profile": {
         "txs": 1500,
         "sample_order": "newest_first",
         "truncated": true,
         "truncated_at": 1500,
-        "span_days": 35.891,
+        "span_days": 35.931,
         "kinds": {
           "swap": 1336,
           "transfer": 97,
@@ -3413,11 +3468,11 @@
         "aggregator_swaps": 4,
         "direct_pool_swaps": 1332,
         "token_moves_no_venue": 97,
-        "swaps_per_day": 37.22,
+        "swaps_per_day": 37.18,
         "median_gap_seconds": 72.0,
         "distinct_hours": 24,
-        "sol_amounts_median": 316778412,
-        "sol_amounts_cv": 1.217,
+        "sol_amounts_median": 316125106,
+        "sol_amounts_cv": 1.218,
         "first_buy_at": {
           "3XBKc5N6ecPdxSBxPRSobzZ4wWiEqtVxVMjYqPeNTrDb": "2026-10-04T02:11:46+00:00",
           "6EMhE4y5UpLsm4UhGaYfN8uKN32EoTUE4GxEDCETEv6D": "2026-10-04T02:25:15+00:00",
@@ -3504,8 +3559,8 @@
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1260,
-        "positions_observed": 587,
-        "quick_round_trips": 587
+        "positions_observed": 612,
+        "quick_round_trips": 612
       },
       "profile": {
         "txs": 1500,
@@ -3554,13 +3609,15 @@
     },
     "CeUn52Jf1zehZmw7YbWW31F9LUypqFxj3qjy5KWvLiPa": {
       "anchor_mint": "91ryaCo5yGpYZM3bs6GUPs97VWJQj7RozBmqPULgpump",
-      "verdict": "wallet.reject_sandwich",
-      "rule_id": "rule.sandwich",
+      "verdict": "wallet.accepted",
+      "rule_id": null,
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 1371,
-        "positions_observed": 270,
-        "quick_round_trips": 94
+        "positions_observed": 1042,
+        "quick_round_trips": 5,
+        "aggregator_fraction": 0.0255,
+        "direct_pool_swaps": 1336
       },
       "profile": {
         "txs": 1500,
@@ -3614,8 +3671,8 @@
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 1314,
-        "positions_observed": 529,
-        "quick_round_trips": 475
+        "positions_observed": 735,
+        "quick_round_trips": 321
       },
       "profile": {
         "txs": 1476,
@@ -3669,8 +3726,8 @@
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1308,
-        "positions_observed": 636,
-        "quick_round_trips": 544
+        "positions_observed": 649,
+        "quick_round_trips": 552
       },
       "profile": {
         "txs": 1500,
@@ -3719,13 +3776,15 @@
     },
     "DTS6KBsfaveqP5WUuWpmk4Mac14nanwwnBaraUAWsrYJ": {
       "anchor_mint": "zj1jpp7QMveWHLs61vL9KMZf254KvW7j4AAmBF8ry2k",
-      "verdict": "wallet.reject_sandwich",
-      "rule_id": "rule.sandwich",
+      "verdict": "wallet.accepted",
+      "rule_id": null,
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 592,
-        "positions_observed": 118,
-        "quick_round_trips": 45
+        "positions_observed": 165,
+        "quick_round_trips": 48,
+        "aggregator_fraction": 0.0017,
+        "direct_pool_swaps": 591
       },
       "profile": {
         "txs": 1500,
@@ -3774,13 +3833,13 @@
     },
     "DeNwH63Xgj3a4bXXHw79BiL5iBUNBQVaRYeLHQTQxL7z": {
       "anchor_mint": "GB68eELgf864nrQHjNvrXHF6Xywpp1kYsb7fsGBupump",
-      "verdict": "wallet.reject_sandwich",
-      "rule_id": "rule.sandwich",
+      "verdict": "wallet.reject_throughput",
+      "rule_id": "rule.throughput",
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 459,
-        "positions_observed": 160,
-        "quick_round_trips": 63
+        "positions_observed": 270,
+        "swaps_per_day": 2346.19
       },
       "profile": {
         "txs": 1500,
@@ -3829,13 +3888,15 @@
     },
     "DgN1YE7mo2nNgTJ2fL5645WXChrqUQuo7RaTuDZGp94Q": {
       "anchor_mint": "zj1jpp7QMveWHLs61vL9KMZf254KvW7j4AAmBF8ry2k",
-      "verdict": "wallet.reject_sandwich",
-      "rule_id": "rule.sandwich",
+      "verdict": "wallet.accepted",
+      "rule_id": null,
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 1275,
-        "positions_observed": 410,
-        "quick_round_trips": 269
+        "positions_observed": 641,
+        "quick_round_trips": 87,
+        "aggregator_fraction": 0.0,
+        "direct_pool_swaps": 1275
       },
       "profile": {
         "txs": 1500,
@@ -3889,8 +3950,8 @@
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1424,
-        "positions_observed": 691,
-        "quick_round_trips": 691
+        "positions_observed": 711,
+        "quick_round_trips": 711
       },
       "profile": {
         "txs": 1500,
@@ -3939,13 +4000,15 @@
     },
     "E1mgnLPgRZR4U7r6p3mmK4dZv9FbC2X64VdsUpgrqN9u": {
       "anchor_mint": "GB68eELgf864nrQHjNvrXHF6Xywpp1kYsb7fsGBupump",
-      "verdict": "wallet.reject_sandwich",
-      "rule_id": "rule.sandwich",
+      "verdict": "wallet.accepted",
+      "rule_id": null,
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 734,
-        "positions_observed": 219,
-        "quick_round_trips": 137
+        "positions_observed": 503,
+        "quick_round_trips": 9,
+        "aggregator_fraction": 0.0109,
+        "direct_pool_swaps": 726
       },
       "profile": {
         "txs": 902,
@@ -3999,8 +4062,8 @@
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 430,
-        "positions_observed": 135,
-        "quick_round_trips": 71
+        "positions_observed": 275,
+        "quick_round_trips": 153
       },
       "profile": {
         "txs": 528,
@@ -4054,8 +4117,8 @@
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 993,
-        "positions_observed": 330,
-        "quick_round_trips": 274
+        "positions_observed": 555,
+        "quick_round_trips": 455
       },
       "profile": {
         "txs": 1500,
@@ -4109,8 +4172,8 @@
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1076,
-        "positions_observed": 523,
-        "quick_round_trips": 504
+        "positions_observed": 552,
+        "quick_round_trips": 524
       },
       "profile": {
         "txs": 1500,
@@ -4164,8 +4227,8 @@
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 962,
-        "positions_observed": 314,
-        "quick_round_trips": 299
+        "positions_observed": 619,
+        "quick_round_trips": 582
       },
       "profile": {
         "txs": 1500,
@@ -4219,8 +4282,8 @@
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 1291,
-        "positions_observed": 521,
-        "quick_round_trips": 375
+        "positions_observed": 769,
+        "quick_round_trips": 327
       },
       "profile": {
         "txs": 1500,
@@ -4274,8 +4337,8 @@
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 613,
-        "positions_observed": 282,
-        "quick_round_trips": 233
+        "positions_observed": 320,
+        "quick_round_trips": 30
       },
       "profile": {
         "txs": 1117,
@@ -4324,20 +4387,20 @@
     },
     "F2jqSx5vi3zwbxcLXq7MWpGBNTBDd6Hffp6up8LTMbAY": {
       "anchor_mint": "91ryaCo5yGpYZM3bs6GUPs97VWJQj7RozBmqPULgpump",
-      "verdict": "wallet.reject_sandwich",
-      "rule_id": "rule.sandwich",
+      "verdict": "wallet.reject_throughput",
+      "rule_id": "rule.throughput",
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1480,
-        "positions_observed": 57,
-        "quick_round_trips": 25
+        "positions_observed": 1268,
+        "swaps_per_day": 270.69
       },
       "profile": {
         "txs": 1500,
         "sample_order": "newest_first",
         "truncated": true,
         "truncated_at": 1500,
-        "span_days": 5.457,
+        "span_days": 5.468,
         "kinds": {
           "swap": 1480,
           "transfer": 12,
@@ -4348,17 +4411,17 @@
         "aggregator_swaps": 1,
         "direct_pool_swaps": 1479,
         "token_moves_no_venue": 12,
-        "swaps_per_day": 271.23,
+        "swaps_per_day": 270.69,
         "median_gap_seconds": 192.0,
         "distinct_hours": 24,
         "sol_amounts_median": 0,
-        "sol_amounts_cv": 3.156,
+        "sol_amounts_cv": 3.174,
         "first_buy_at": {
-          "TTWofwAge91oFhZs7kpQdyrVRkmevgM88xijGvQFbKo": "2026-11-03T12:59:30+00:00",
-          "5hysrWKpTNwRXJjP3j8gpUZnZUYXxHJJBEWSyP4jpump": "2026-11-03T13:31:47+00:00",
+          "TTWofwAge91oFhZs7kpQdyrVRkmevgM88xijGvQFbKo": "2026-11-03T13:38:21+00:00",
           "BwkTUYVE1j6U14vTDqhvfYA1qMV3jqkv6VgAQCv3K7n9": "2026-11-03T13:41:15+00:00",
           "4N7kHMRng9MQ7n41CNZUQ8bpx2Msmk5Fb5VoEchepump": "2026-11-03T13:52:27+00:00",
           "DnbSoP9U6aFTSpxp6PD3vvWGeu9tBwiGgj8buCQ8iZL2": "2026-11-03T13:53:57+00:00",
+          "5hysrWKpTNwRXJjP3j8gpUZnZUYXxHJJBEWSyP4jpump": "2026-11-03T14:00:14+00:00",
           "HsZXb9rppRQarZHHCvuLkKP7sAKPMCwrarf5KTTcpump": "2026-11-03T14:20:17+00:00",
           "F58gXCMcKAHZPYUFL5D62hVGzAnAnVdFBWg7MQpNAbp4": "2026-11-03T18:12:40+00:00",
           "6YqakuvZZ26Svz5SGtCV4yWymwyp1NM4M1DgBX7svRpC": "2026-11-03T18:43:12+00:00",
@@ -4384,8 +4447,8 @@
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 257,
-        "positions_observed": 108,
-        "quick_round_trips": 80
+        "positions_observed": 153,
+        "quick_round_trips": 97
       },
       "profile": {
         "txs": 295,
@@ -4439,8 +4502,8 @@
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 1165,
-        "positions_observed": 492,
-        "quick_round_trips": 322
+        "positions_observed": 721,
+        "quick_round_trips": 410
       },
       "profile": {
         "txs": 1269,
@@ -4494,8 +4557,8 @@
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1291,
-        "positions_observed": 454,
-        "quick_round_trips": 407
+        "positions_observed": 610,
+        "quick_round_trips": 199
       },
       "profile": {
         "txs": 1500,
@@ -4549,8 +4612,8 @@
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 431,
-        "positions_observed": 174,
-        "quick_round_trips": 102
+        "positions_observed": 248,
+        "quick_round_trips": 109
       },
       "profile": {
         "txs": 482,
@@ -4642,8 +4705,8 @@
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1084,
-        "positions_observed": 421,
-        "quick_round_trips": 403
+        "positions_observed": 637,
+        "quick_round_trips": 587
       },
       "profile": {
         "txs": 1500,
@@ -4697,8 +4760,8 @@
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1049,
-        "positions_observed": 508,
-        "quick_round_trips": 461
+        "positions_observed": 509,
+        "quick_round_trips": 85
       },
       "profile": {
         "txs": 1500,
@@ -4752,8 +4815,8 @@
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 423,
-        "positions_observed": 169,
-        "quick_round_trips": 67
+        "positions_observed": 225,
+        "quick_round_trips": 37
       },
       "profile": {
         "txs": 650,
@@ -4802,41 +4865,39 @@
     },
     "GPsdQQDYewZuYjG6u2fhvpTbPce9kKfoSE4usNLZUXPU": {
       "anchor_mint": "zj1jpp7QMveWHLs61vL9KMZf254KvW7j4AAmBF8ry2k",
-      "verdict": "wallet.reject_sandwich",
-      "rule_id": "rule.sandwich",
+      "verdict": "wallet.accepted",
+      "rule_id": null,
       "measured": {
         "anchors_observed": 0,
-        "swaps_observed": 1207,
-        "positions_observed": 440,
-        "quick_round_trips": 162
+        "swaps_observed": 1205,
+        "positions_observed": 747,
+        "quick_round_trips": 208,
+        "aggregator_fraction": 0.0,
+        "direct_pool_swaps": 1205
       },
       "profile": {
         "txs": 1500,
         "sample_order": "newest_first",
         "truncated": true,
         "truncated_at": 1500,
-        "span_days": 7.58,
+        "span_days": 7.698,
         "kinds": {
-          "swap": 1207,
-          "transfer": 179,
+          "swap": 1205,
+          "transfer": 183,
           "other": 8
         },
-        "swaps": 1207,
-        "distinct_mints": 394,
+        "swaps": 1205,
+        "distinct_mints": 390,
         "aggregator_swaps": 0,
-        "direct_pool_swaps": 1207,
-        "token_moves_no_venue": 179,
-        "swaps_per_day": 159.23,
-        "median_gap_seconds": 66.0,
+        "direct_pool_swaps": 1205,
+        "token_moves_no_venue": 183,
+        "swaps_per_day": 156.53,
+        "median_gap_seconds": 65.0,
         "distinct_hours": 24,
         "sol_amounts_median": 202205000,
         "sol_amounts_cv": 1.133,
         "first_buy_at": {
-          "Bn3ZRTsGpPER94Guzhjdfd6ngJR3Bcra6V6Ysn7npump": "2026-11-01T05:15:06+00:00",
-          "DjBy4FSeC7dqPL7yuFLeYoCRC627YUm2js41icDjpump": "2026-11-01T07:00:04+00:00",
-          "DL6BShP9ExuS1aEAEm4jLGcMzDRfUCbka4uCZGidpump": "2026-11-01T07:13:01+00:00",
-          "EngKwe2f4HwprGcnXAFVbxNQYUd5PuBcs1ydn95Xpump": "2026-11-01T07:23:52+00:00",
-          "4UK1TNpMDkijYzs2EycrbRN5nBcBSB2FbzWBTcNRpump": "2026-11-01T08:08:57+00:00",
+          "4UK1TNpMDkijYzs2EycrbRN5nBcBSB2FbzWBTcNRpump": "2026-11-01T08:10:55+00:00",
           "xzoZb7oBrjQaUjRB63QPsY3KsqQ2AriKo4xwM76pump": "2026-11-01T09:06:19+00:00",
           "9tGHmVgAVNu2vTCKUg5AwhvCojNsANGRbY21K1Ngpump": "2026-11-01T18:45:10+00:00",
           "GdHAGtMXSEFqU8fziv4Ly6MFw2poqkDgGGA7osAupump": "2026-11-01T18:47:53+00:00",
@@ -4851,7 +4912,11 @@
           "Ac8nEe9FMrvYoFmKo3j9EW2wSdtByQ4SoByzM8uPpump": "2026-11-01T20:34:41+00:00",
           "G7XwK44UUcrWABRe34ciPfhbiW3MxYkj9ScmCQm7Brq7": "2026-11-01T20:56:57+00:00",
           "PXkKQUvDSvGJj4jyuH1wdWYotF1A28aHfiCjg2aLAQ1": "2026-11-01T21:35:27+00:00",
-          "Co9vpejVTMgimYxCEtwXYjLmHXuuFUHDJ6Nf9RpDpump": "2026-11-01T21:50:24+00:00"
+          "Co9vpejVTMgimYxCEtwXYjLmHXuuFUHDJ6Nf9RpDpump": "2026-11-01T21:50:24+00:00",
+          "3K6K1yqPNNEFYcT5tJTtmSogZvLTVvzc2txi3CU9pump": "2026-11-01T22:11:41+00:00",
+          "Ga2ub7QiR4AyMKmZTExWLPzH9aWNbQ2AtwFPtTTkpump": "2026-11-01T22:15:37+00:00",
+          "HgM2cRra1gSNLXgudJ7ir6pTCVK18BEJUhCZ56kjfhNf": "2026-11-01T22:40:24+00:00",
+          "EwUhGrsW9dW9rJ2WMogXebfjocnUtKBeK1pZvamYpump": "2026-11-01T22:55:49+00:00"
         }
       }
     },
@@ -4862,7 +4927,7 @@
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 8,
-        "positions_observed": 2,
+        "positions_observed": 8,
         "quick_round_trips": 1,
         "aggregator_fraction": 0.0,
         "direct_pool_swaps": 8
@@ -4957,8 +5022,8 @@
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 1389,
-        "positions_observed": 287,
-        "quick_round_trips": 273
+        "positions_observed": 1555,
+        "quick_round_trips": 1189
       },
       "profile": {
         "txs": 1500,
@@ -5012,8 +5077,8 @@
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 945,
-        "positions_observed": 206,
-        "quick_round_trips": 204
+        "positions_observed": 233,
+        "quick_round_trips": 228
       },
       "profile": {
         "txs": 1500,
@@ -5067,8 +5132,8 @@
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 850,
-        "positions_observed": 245,
-        "quick_round_trips": 191
+        "positions_observed": 622,
+        "quick_round_trips": 445
       },
       "profile": {
         "txs": 957,
@@ -5177,8 +5242,8 @@
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1020,
-        "positions_observed": 405,
-        "quick_round_trips": 385
+        "positions_observed": 504,
+        "quick_round_trips": 475
       },
       "profile": {
         "txs": 1500,
@@ -5232,8 +5297,8 @@
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1021,
-        "positions_observed": 399,
-        "quick_round_trips": 398
+        "positions_observed": 583,
+        "quick_round_trips": 581
       },
       "profile": {
         "txs": 1500,
@@ -5287,8 +5352,8 @@
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 273,
-        "positions_observed": 94,
-        "quick_round_trips": 79
+        "positions_observed": 160,
+        "quick_round_trips": 134
       },
       "profile": {
         "txs": 1500,
@@ -5342,8 +5407,8 @@
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 1156,
-        "positions_observed": 346,
-        "quick_round_trips": 325
+        "positions_observed": 687,
+        "quick_round_trips": 611
       },
       "profile": {
         "txs": 1500,
@@ -5397,15 +5462,15 @@
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1172,
-        "positions_observed": 241,
-        "quick_round_trips": 188
+        "positions_observed": 782,
+        "quick_round_trips": 591
       },
       "profile": {
         "txs": 1500,
         "sample_order": "newest_first",
         "truncated": true,
         "truncated_at": 1500,
-        "span_days": 3.097,
+        "span_days": 3.189,
         "kinds": {
           "swap": 1172,
           "transfer": 243,
@@ -5416,7 +5481,7 @@
         "aggregator_swaps": 0,
         "direct_pool_swaps": 1172,
         "token_moves_no_venue": 243,
-        "swaps_per_day": 378.38,
+        "swaps_per_day": 367.48,
         "median_gap_seconds": 8.0,
         "distinct_hours": 24,
         "sol_amounts_median": 305805000,
@@ -5460,7 +5525,7 @@
         "sample_order": "newest_first",
         "truncated": true,
         "truncated_at": 1500,
-        "span_days": 0.001,
+        "span_days": 0.0,
         "kinds": {
           "swap": 0,
           "transfer": 0,
@@ -5485,35 +5550,32 @@
       "rule_id": "rule.sandwich",
       "measured": {
         "anchors_observed": 0,
-        "swaps_observed": 1263,
-        "positions_observed": 62,
-        "quick_round_trips": 62
+        "swaps_observed": 1246,
+        "positions_observed": 858,
+        "quick_round_trips": 858
       },
       "profile": {
         "txs": 1500,
         "sample_order": "newest_first",
         "truncated": true,
         "truncated_at": 1500,
-        "span_days": 1.066,
+        "span_days": 1.075,
         "kinds": {
-          "swap": 1263,
-          "transfer": 41,
-          "other": 85
+          "swap": 1246,
+          "transfer": 47,
+          "other": 89
         },
-        "swaps": 1263,
-        "distinct_mints": 77,
+        "swaps": 1246,
+        "distinct_mints": 78,
         "aggregator_swaps": 2,
-        "direct_pool_swaps": 1261,
-        "token_moves_no_venue": 41,
-        "swaps_per_day": 1184.56,
+        "direct_pool_swaps": 1244,
+        "token_moves_no_venue": 47,
+        "swaps_per_day": 1159.39,
         "median_gap_seconds": 0.0,
         "distinct_hours": 16,
-        "sol_amounts_median": 880565082,
-        "sol_amounts_cv": 2.049,
+        "sol_amounts_median": 885231649,
+        "sol_amounts_cv": 2.006,
         "first_buy_at": {
-          "HJdiYLk32fknwNBUxDi4oKa4Fkzmf3HFiFG3qEs1pump": "2026-11-07T22:38:26+00:00",
-          "Ezd2xYNPcPjoXZkc33dzmcGZK9SMTP9SuXi2E6r5pump": "2026-11-07T22:57:53+00:00",
-          "HSrxpyAYpFHLJ4j9GXrAasyapD2AZQDdMepp2eZRpump": "2026-11-07T23:07:07+00:00",
           "2uPWZGK8cr5WChqNMEJFU4erCbsAsdWeDWWCtozppump": "2026-11-07T23:16:23+00:00",
           "DEAPc7jAypDbN7AG2BgDpwCxPhtMGFL6JU2yxzPzpump": "2026-11-07T23:35:31+00:00",
           "8gsmdmp6WDz8ttusPbiXA3rizGXfU3gBdPcNoeTFpump": "2026-11-07T23:40:30+00:00",
@@ -5530,7 +5592,10 @@
           "D5LYjWoo3auQmSHndMxfbH54HBbPb4wtXUJYquRvpump": "2026-11-08T03:40:17+00:00",
           "4vvZ1thWwLrP7QwbHod93oyVKiGu2qE6NyXvaDVepump": "2026-11-08T04:22:52+00:00",
           "AtYspgDPrMudaKCmGVeyUnNiZbhgtp86GKDaroDLpump": "2026-11-08T04:42:43+00:00",
-          "Uk4tG6PTeEJiH6yPNiaeft1RPcibu2So2PPJnPKpump": "2026-11-08T14:58:06+00:00"
+          "Uk4tG6PTeEJiH6yPNiaeft1RPcibu2So2PPJnPKpump": "2026-11-08T14:58:06+00:00",
+          "6NPJJZmwhoWBQTxooYE9j747b1tTVkgNQnvUWpjHpump": "2026-11-08T15:08:29+00:00",
+          "1HyA4yBDaaqJzjJUaPhsAHXNJj7gW5xC4kuLzrGpump": "2026-11-08T15:18:11+00:00",
+          "Bnrst3RzTqUMb6ajgJmMCsNwjibQXWMAktTKcY2Xpump": "2026-11-08T15:19:18+00:00"
         }
       }
     },
@@ -5541,8 +5606,8 @@
       "measured": {
         "anchors_observed": 1,
         "swaps_observed": 1305,
-        "positions_observed": 602,
-        "quick_round_trips": 520
+        "positions_observed": 691,
+        "quick_round_trips": 410
       },
       "profile": {
         "txs": 1500,
@@ -5591,13 +5656,15 @@
     },
     "kBWCyHmjagiqL3HSLatfmPWGUx3V7KeHVjQWemdX4dZ": {
       "anchor_mint": "7Y7V1a4m2nWK7BMgbka5B4vR1pDvCK7yva3Hnrqkraze",
-      "verdict": "wallet.reject_sandwich",
-      "rule_id": "rule.sandwich",
+      "verdict": "wallet.accepted",
+      "rule_id": null,
       "measured": {
         "anchors_observed": 0,
         "swaps_observed": 1289,
-        "positions_observed": 360,
-        "quick_round_trips": 175
+        "positions_observed": 865,
+        "quick_round_trips": 76,
+        "aggregator_fraction": 0.4756,
+        "direct_pool_swaps": 676
       },
       "profile": {
         "txs": 1500,
@@ -5650,52 +5717,52 @@
       "rule_id": "rule.sandwich",
       "measured": {
         "anchors_observed": 0,
-        "swaps_observed": 1331,
-        "positions_observed": 415,
-        "quick_round_trips": 307
+        "swaps_observed": 1314,
+        "positions_observed": 458,
+        "quick_round_trips": 349
       },
       "profile": {
         "txs": 1500,
         "sample_order": "newest_first",
         "truncated": true,
         "truncated_at": 1500,
-        "span_days": 0.138,
+        "span_days": 0.137,
         "kinds": {
-          "swap": 1331,
-          "transfer": 1,
-          "other": 153
+          "swap": 1314,
+          "transfer": 0,
+          "other": 170
         },
-        "swaps": 1331,
-        "distinct_mints": 184,
+        "swaps": 1314,
+        "distinct_mints": 178,
         "aggregator_swaps": 0,
-        "direct_pool_swaps": 1331,
-        "token_moves_no_venue": 1,
-        "swaps_per_day": 9632.97,
-        "median_gap_seconds": 4.0,
-        "distinct_hours": 5,
-        "sol_amounts_median": 786740682,
-        "sol_amounts_cv": 0.783,
+        "direct_pool_swaps": 1314,
+        "token_moves_no_venue": 0,
+        "swaps_per_day": 9570.86,
+        "median_gap_seconds": 3.0,
+        "distinct_hours": 4,
+        "sol_amounts_median": 783372521,
+        "sol_amounts_cv": 0.817,
         "first_buy_at": {
-          "GrnWKAjRzzZj7kgaKFD3tArNJJHmTr2udVkcFiEopump": "2026-11-08T20:57:20+00:00",
-          "9C4dVzu4ttAjWkz2571Hws8TP3Q4r8PJUg692eghpump": "2026-11-08T20:59:51+00:00",
-          "F3kJ3dAn4SsZ29XKPL3eaXHVAbWRQEXqn57DgLCXpump": "2026-11-08T21:00:24+00:00",
-          "9DL3ybGDHqe18JyMLHBkZ6PwkbCUtdypfzqCf3QLWmLn": "2026-11-08T21:01:34+00:00",
-          "4KaZytCzGQc6yA4RXgpzVBQXVmE3A1gHWooyzmkeKGZN": "2026-11-08T21:01:43+00:00",
-          "77nbp85BdtNqBScHh2TAnjWhjP2LQCmoukYLF1pvpump": "2026-11-08T21:01:54+00:00",
-          "6VKgTto9PqZckyo3TnMmaACyY2PyVXrdPBkJZYpGpump": "2026-11-08T21:02:36+00:00",
-          "3nt27RbMkJss4GWp1p6rKee9ykymUXMgfEt7KevMpump": "2026-11-08T21:07:42+00:00",
-          "HofqZkb1EQX92JXCWJsTVjZDiGdP2StCe6BEjL6qF9ir": "2026-11-08T21:07:46+00:00",
-          "6BLLvChiDnbxsSEZnBmbXyNwYoLRER876TS1fdHhM8LX": "2026-11-08T21:08:48+00:00",
-          "9M9GqBdbW1LF4eBvKqCQVmi2hs32Gt3ZR5hAVh6ipump": "2026-11-08T21:10:56+00:00",
-          "GVBc3BucmF7KhxgdFdGP1bHLCXhQxScmewX3AUdwpump": "2026-11-08T21:12:17+00:00",
-          "H8QYbRwz3Er5RsYKareCXbXtognkQZKYEWPU9Tnipump": "2026-11-08T21:12:21+00:00",
-          "6HWzVf2jv6NTYQgRNvSGFfoh7XEx1xjELLwWGYegpump": "2026-11-08T21:14:13+00:00",
-          "FrHAjA9ZNcM7a2Ranj7iLSZ2NCjLpafdPtin8AKgpump": "2026-11-08T21:14:52+00:00",
-          "5STGgACfcBcWUkkVRrgw4xKyMtw7PqY4RDrdN42Wpump": "2026-11-08T21:15:53+00:00",
-          "ARGGnM1zK12eYCzRYbULJECFsMh4DM7hKgxNk97Pearn": "2026-11-08T21:17:20+00:00",
-          "Ck9DbvBSvbfWqrAMehsc4chWDz7AmZVHyLoMCXuXpump": "2026-11-08T21:17:30+00:00",
-          "A3PDWSoSCZVZvs11sro45QtqcYc2Qjb1rXGFKrwpump": "2026-11-08T21:19:51+00:00",
-          "Cgc8Khqqoi8t2rjpb2eyKwqYAtp2y1xBwzPt2evJpump": "2026-11-08T21:21:06+00:00"
+          "BUjWBDJjj6wRDhKZPMrHf5cahfzbpapGX3HbQU1Upump": "2026-11-08T21:41:57+00:00",
+          "68HW8kUTjQzCFyoazkhn2Kx5BjE5xwyW8toV5Gvrpump": "2026-11-08T21:42:17+00:00",
+          "2eGd3wkgzzwnwpGXKYwXGVdFYCpY5wXH5AHicBXvpump": "2026-11-08T21:42:32+00:00",
+          "6A3xEd79ieUNGBjziReat5pb2RCGjJJ81Yd1pyh3pump": "2026-11-08T21:44:15+00:00",
+          "62v6zgaTnxdtJMyHqYQVeUaHBckDuFJqDf3aFGigearn": "2026-11-08T21:45:14+00:00",
+          "9boqZQHLemAGM3PRdKE7sJfjDZ4Vy96Y66qvvNNvpump": "2026-11-08T21:45:34+00:00",
+          "TTApQVdZpHas1ygqomHDvfsZ8Ap4Xj7RXcxJMAHoSQe": "2026-11-08T21:45:47+00:00",
+          "6YkKdEvdGpHjheGB2Tzz1QP5HWoQa9YJzfFuH9M1pump": "2026-11-08T21:46:33+00:00",
+          "9sNJbdTsSuViDiNdMdy66HDCf2pNrg7yYpEjpYFPpump": "2026-11-08T21:46:44+00:00",
+          "2XiY2VwEXrjzCpsVPyRonpBoSfToWjxdzBnrchtPpump": "2026-11-08T21:47:16+00:00",
+          "5i2HMJ7ntKLccYj11RmnaCnGWWdtzTk8YEopn3Rpump": "2026-11-08T21:51:22+00:00",
+          "4prKtarobdhYDY4Hu3uGZMx7Je4HqPJeLVyxN6m4Ld3T": "2026-11-08T21:52:14+00:00",
+          "9x2AEiRsWNGeDgDTdmW3fCPh6GVcP3cRQUJ8mffkpump": "2026-11-08T21:53:03+00:00",
+          "DXucHQjnGGLnW8kkiBZEKp7gRhYHF9ni1aegyvqypump": "2026-11-08T21:54:23+00:00",
+          "4DXxwJTgPvBRFDVCb6Sg3wggbxXBHsvXKat5ZS9Tpump": "2026-11-08T21:56:45+00:00",
+          "5LKbqot7e5gHHbB1KFxmKNcvTWRrrdeA7YixXG8kpump": "2026-11-08T21:58:06+00:00",
+          "EtGRFzBkVowsrgSH1ySBnN8LHXoZ1QYacocRNw15pump": "2026-11-08T21:59:47+00:00",
+          "EcDLvDyb9eA7K2jC5dRX2nqLkbLj73F4SHLe4X1rpump": "2026-11-08T22:00:32+00:00",
+          "3VaMgznu3oijbZTV9uina2zkaqkCRTHHrz6Ymr26pump": "2026-11-08T22:00:35+00:00",
+          "AyAJZFsikQV8KoE3pjz6j5psQUWFjvHfyQpiTX7Vpump": "2026-11-08T22:04:19+00:00"
         }
       }
     }

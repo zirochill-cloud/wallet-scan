@@ -677,7 +677,7 @@ Defaults, all **unvalidated** (`SCREEN_DEFAULTS_VALIDATED = False`):
 | Rule | Default | Source of the number |
 |---|---|---|
 | `genesis_burst` | ≥2 anchors within 60 s of genesis | `PHASE1A_RECOVERY.md` §3, a guess |
-| `sandwich` | ≥2 round trips ≤90 s in ≥2 different mints | guess; 90 s is "one block or two" with margin |
+| `sandwich` (v2) | ≥3 quick round trips ≤90 s in ≥2 mints, and ≥20% of the last 30 days' swaps (window must hold ≥10 swaps) | designed from the v1 failure below; 90 s inherited, the rest unvalidated |
 | `throughput` | >200 swaps/day, window floored at 60 s | guess; ~8× a busy manual trader |
 | `router_only` | >95% aggregator-routed **and** zero direct pool swaps | guess; retail uses aggregators too |
 
@@ -725,7 +725,7 @@ needs quick round trips in *different* mints, one direct pool swap defeats `rout
 two swaps lands in `not_computable` rather than either verdict. Both sets remain synthetic,
 so the validation gap below is unchanged.
 
-### Real-data calibration (2026-11-09) — first evidence, and it is adverse
+### Real-data calibration, v1 (2026-11-09) — first evidence, and it was adverse
 
 `spikes/calibrate_filter.py` ran the four rules over the 100 first-20 buyers already in
 the database (read-only; nothing reseeded). Full record: `docs/PHASE1B_CALIBRATION.md`.
@@ -761,6 +761,51 @@ Two sampling facts a reader needs: the first pass sampled oldest-first and misla
 wallet as `insufficient_swaps` from a quiet early slice, so the sample was re-fetched
 newest-first and all numbers above are from that pass; and 25 wallets hit the
 1,500-transaction cap, so their rates describe the recent window, not a lifetime.
+
+### Sandwich redesigned to concentration-based, and re-calibrated (v2)
+
+The **design principle**: share of recent activity, not count over lifetime. `sandwich`
+is now `sandwich(wallet, positions, swaps)` and fires when, in the last 30 days of the
+wallet's own activity, at least 3 round trips lasted ≤90 s across ≥2 mints **and** those
+trips are ≥20% of the window's swaps, with ≥10 swaps in the window. Under 10 window
+swaps is a **pass**, not `not_computable`: a sparse trader is not a sandwich bot, while
+insufficient *lifetime* data stays `NOT_COMPUTABLE_INSUFFICIENT_SWAPS`. The window ends at
+the wallet's own last swap rather than wall clock, because a historical sample would
+give every inactive wallet an empty window and pass it by default. `SCREEN_RULE_VERSION`
+is now `quality_screen/v2`; only `sandwich` changed.
+
+**Before → after, same 100 wallets:** rejection 95% → **72%** (67 `reject_sandwich` +
+5 `reject_throughput`), accepted 2 → **25**, not_computable 3 → 3. Overlap fell 32 → 27,
+and throughput now fires **as primary** on 5 wallets sandwich no longer catches.
+
+**The anchor case is fixed:** `8a6JShiMBw` — 0.5 swaps/day over 417 days, 27 quick trips
+of 198 recent swaps, share 13.6% — is now **accepted**. Both unambiguous bots stay
+`reject_sandwich` (`Gfds2Ur4UV` at 85.6%, `AviBqnzP8m` at 46.4%), and both human
+regression guards (`FwA2rjEzvs`, `GRmwzXEBvD`) stay accepted.
+
+**Two predictions did not hold, and neither was tuned away:**
+`52NUhyYcpw` is rejected by **throughput**, not sandwich — 1,462 swaps in 3.2 hours but
+only 23 matched round trips (1.5% share), so it is buying/distributing, not flipping, and
+no share floor that caught it would spare the retail wallet. `8GSDbEhMy3` is **accepted**
+at a 17.1% share against a 20% floor — a known false negative, 3.5 points above the
+retail wallet's 13.6%, too narrow a gap to place a threshold in without fitting it to two
+wallets.
+
+**Round-trip reconstruction was corrected too:** v1 opened an episode only when none was
+open, collapsing "buy, buy, buy, sell-all" into one round trip and scoring a 1,462-swap
+wallet as 21 trips. v2 uses FIFO lot matching (as `positions.reconstruct` does), which
+raised the confirmed bot's quick trips from 273 to 1,189.
+
+**Threshold sensitivity flipped:** under v1 `sandwich_max_seconds` was inert across
+30–180 s; under v2 `min_share` (80→39 wallets), `window_days` (58→72) and `max_seconds`
+(51→77) are all load-bearing. That is the point of the redesign — the parameters now
+carry the decision, so they are exactly what must not be fitted to 100 unlabelled
+wallets. `throughput_max_swaps_per_day` remains load-bearing (58→9 over 50–1000).
+
+**Conclusion: working** on this sample, with the one known false negative above.
+`SCREEN_DEFAULTS_VALIDATED` remains `False`. Full record: `docs/PHASE1B_CALIBRATION.md`.
+Next validation target: an externally labelled bundled/clean set, or a larger anchor
+sample (S3 discovery or more user-supplied anchors).
 
 ### Related open item — anchor count
 

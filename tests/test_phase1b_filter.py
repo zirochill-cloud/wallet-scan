@@ -49,11 +49,17 @@ from solscope.quality_filter import (  # noqa: E402
     SwapObservation,
     WalletAnchorEntry,
     WalletVerdict,
+    MIN_SWAPS_TO_SCREEN,
+    SANDWICH_MIN_ROUND_TRIPS,
+    SANDWICH_MIN_SHARE,
+    SANDWICH_MIN_WINDOW_SWAPS,
+    SANDWICH_WINDOW_DAYS,
     evaluate_anchor_set,
     evaluate_wallet,
     router_only,
     sandwich,
     screen_wallet,
+    throughput,
 )
 
 H = dt.timedelta(hours=1)
@@ -145,6 +151,110 @@ def tabulate(mints: dict[str, list[str]], delay_fn, label: str) -> dict[str, int
         f"not_computable {counts['not_computable']}"
     )
     return counts
+
+
+def wallet_series(*, swaps: int, span_days: float, quick_trips: int,
+                  quick_mints: int = 3, window_days: int = 30):
+    """A (swaps, round trips) pair with a controlled recent-window composition.
+
+    Swaps are spread evenly over ``span_days`` ending now; every quick round trip sits
+    inside the last ``window_days`` and lasts 30 s, so ``share`` is exactly
+    ``quick_trips / swaps-in-window``. This is how the real wallets are described in
+    docs/PHASE1B_CALIBRATION.md, so the fixtures and the field data speak the same
+    language.
+    """
+    end = T0 + dt.timedelta(days=span_days)
+    step = dt.timedelta(days=span_days) / swaps if swaps else dt.timedelta(0)
+    sw = [SwapObservation(at=end - step * (swaps - 1 - i), aggregator=None, pool="pump-amm")
+          for i in range(swaps)]
+    window_seconds = window_days * 86400
+    trips = []
+    for j in range(quick_trips):
+        offset = window_seconds * (j + 1) / (quick_trips + 1)
+        at = end - dt.timedelta(seconds=window_seconds - offset)
+        trips.append(RoundTrip(mint=f"qm{j % quick_mints}", opened_at=at,
+                               closed_at=at + dt.timedelta(seconds=30)))
+    return sw, trips
+
+
+def test_sandwich_v2_calibration_ground_truth() -> None:
+    """sandwich/v2 against the profiles measured on the 100 real wallets.
+
+    Every expectation here is the *measured* outcome from
+    docs/PHASE1B_CALIBRATION.md, including the two cases the redesign does not get
+    right. Encoding the honest answer is the point: a regression test that asserts a
+    hoped-for verdict would pass while the filter stayed broken.
+    """
+    print("\n[sandwich v2 — ground truth from the 100-wallet calibration]")
+
+    # 8a6JShiMBw, the anchor mismatch under v1: a retail trader carrying 30 sub-90s
+    # round trips across 417 days, ~2 of them in the recent window.
+    sw, trips = wallet_series(swaps=207, span_days=417, quick_trips=2)
+    check("retail wallet (2 quick trips in 30 days) is ACCEPTED",
+          not sandwich("C50", trips, sw), "v1 rejected this wallet")
+
+    # The same wallet as measured: 198 swaps in its last 30 days, 27 quick trips = 13.6%.
+    sw, trips = wallet_series(swaps=198, span_days=30, quick_trips=27)
+    check("retail wallet at 13.6% quick share is ACCEPTED",
+          not sandwich("C51", trips, sw))
+
+    # Two human wallets: sparse, few or no round trips.
+    sw, trips = wallet_series(swaps=3, span_days=51, quick_trips=0)
+    check("3-swap human in 51 days is ACCEPTED", not sandwich("C52", trips, sw))
+    sw, trips = wallet_series(swaps=8, span_days=40, quick_trips=1)
+    check("8-swap human with one 30s flip is ACCEPTED", not sandwich("C53", trips, sw))
+
+    # Unambiguous bots: the lost-bot signatures v2 must still catch.
+    sw, trips = wallet_series(swaps=1389, span_days=1, quick_trips=1189)
+    check("1,389-swap/day bot at 86% quick share is REJECTED", sandwich("C54", trips, sw))
+    sw, trips = wallet_series(swaps=1339, span_days=24, quick_trips=621)
+    check("55-swaps/day bot at 46% quick share is REJECTED", sandwich("C55", trips, sw))
+
+    # Known limitation, asserted as measured rather than as hoped.
+    sw, trips = wallet_series(swaps=1260, span_days=23, quick_trips=215)
+    check("bot-like wallet at 17.1% share is ACCEPTED (just under the 20% floor)",
+          not sandwich("C56", trips, sw), "a near-miss the redesign does not fix")
+
+    # 52NUhyYcpw: 1,462 swaps but only 23 matched round trips — volume, not sandwiching.
+    sw, trips = wallet_series(swaps=1462, span_days=0.132, quick_trips=22)
+    check("volume wallet (22 trips in 1,462 swaps) is NOT a sandwich",
+          not sandwich("C57", trips, sw))
+    check("...and throughput catches it instead", throughput("C57", sw))
+
+    # The share floor and count floor, stated directly.
+    sw, trips = wallet_series(swaps=100, span_days=30, quick_trips=40)
+    check("100 window swaps, 40 quick trips, share 0.40 is REJECTED",
+          sandwich("C58", trips, sw))
+    sw, trips = wallet_series(swaps=100, span_days=30, quick_trips=15)
+    check("100 window swaps, 15 quick trips, share 0.15 is ACCEPTED",
+          not sandwich("C59", trips, sw))
+    sw, trips = wallet_series(swaps=100, span_days=30, quick_trips=2)
+    check("2 quick trips in 30 days is ACCEPTED (below the count floor)",
+          not sandwich("C60", trips, sw))
+
+    # A thin window is a pass, not "not computable" — the two are different questions.
+    sw, trips = wallet_series(swaps=4, span_days=20, quick_trips=2)
+    check("4 swaps in the window is a pass, not NOT_COMPUTABLE",
+          not sandwich("C61", trips, sw) and len(sw) >= MIN_SWAPS_TO_SCREEN)
+
+    # End to end through screen_wallet, on the four wallets that must not move.
+    cases = {
+        "retail-anchor": (207, 417, 2, WalletVerdict.ACCEPTED),
+        "bot-fast": (1389, 1, 1189, WalletVerdict.REJECT_SANDWICH),
+        "human-sparse": (8, 40, 1, WalletVerdict.ACCEPTED),
+    }
+    for name, (n, span, q, expected) in cases.items():
+        sw, trips = wallet_series(swaps=n, span_days=span, quick_trips=q)
+        verdict = screen_wallet(
+            f"C-{name}", ANCHORS, trips, sw,
+            entries=[WalletAnchorEntry("A4", ANCHORS["A4"].genesis_at + dt.timedelta(days=1))],
+        ).verdict
+        check(f"screen_wallet: {name} -> {expected.value}",
+              verdict is expected, f"got {verdict.value}")
+
+    print(f"  note  v2 floors in force: min_round_trips {SANDWICH_MIN_ROUND_TRIPS}, "
+          f"min_share {SANDWICH_MIN_SHARE:.0%}, window {SANDWICH_WINDOW_DAYS}d, "
+          f"min_window_swaps {SANDWICH_MIN_WINDOW_SWAPS}")
 
 
 def main() -> int:
@@ -344,15 +454,18 @@ def main() -> int:
           f"got {no_swaps.verdict.value}")
 
     quick = [RoundTrip(m, T0, T0 + dt.timedelta(seconds=30))
-             for m in ("A1", "A2", "A3")]
+             for m in ("A1", "A2", "A3")] * 4  # 12 quick trips, 3 mints
     row = screen_wallet("C00", ANCHORS, quick, organic_swaps(0),
                         entries=entries_for("C00", ["A4"], late_delay))
-    check("sandwich fires on 3 x 30s round trips in different mints",
+    check("sandwich fires on 12 quick round trips carrying 30% of a 40-swap window",
           row.verdict is WalletVerdict.REJECT_SANDWICH, f"got {row.verdict.value}")
-    check("sandwich evidence carries the quick trips",
-          row.measured.get("quick_round_trips") == 3, f"got {row.measured}")
+    check("sandwich evidence carries the quick trips and their share",
+          row.measured.get("quick_round_trips") == 12
+          and row.measured.get("window_swaps") == 40
+          and abs(row.measured.get("quick_share", 0) - 0.3) < 1e-6, f"got {row.measured}")
     check("sandwich needs different mints, not just quick trips",
-          not sandwich("C00", [RoundTrip("A1", T0, T0 + dt.timedelta(seconds=30))] * 3))
+          not sandwich("C00", [RoundTrip("A1", T0, T0 + dt.timedelta(seconds=30))] * 12,
+                       organic_swaps(0)))
 
     fast = [SwapObservation(at=T0 + dt.timedelta(minutes=3 * k),
                             aggregator=None, pool="pump-amm") for k in range(500)]
@@ -388,6 +501,9 @@ def main() -> int:
                          entries=entries_for("C04", ["A4"], late_delay))
     check("rule order: sandwich is reported ahead of router_only",
           both.verdict is WalletVerdict.REJECT_SANDWICH, f"got {both.verdict.value}")
+
+    # --- sandwich v2 ground truth (real-data regression) ------------------
+    test_sandwich_v2_calibration_ground_truth()
 
     # --- summary ----------------------------------------------------------
     print()

@@ -1,196 +1,182 @@
 # Phase 1b — real-data calibration of the quality filter
 
-**Date:** 2026-11-09
 **Sample:** the 100 first-20 buyers already seeded across the five verified anchors
-(20 per anchor, `anchor_wallet_verdicts`). Read-only run; nothing was reseeded.
-**Rules under test:** `genesis_burst`, `sandwich`, `throughput`, `router_only` via
-`screen_wallet`, at the shipped defaults (`SCREEN_DEFAULTS_VALIDATED = False`).
-**Harness:** `spikes/calibrate_filter.py`; raw output in `spikes/filter_calibration.json`.
+(20 per anchor, `anchor_wallet_verdicts`). Read-only: nothing reseeded, no thresholds
+persisted from measurement.
+**Harness:** `spikes/calibrate_filter.py`; raw output `spikes/filter_calibration.json`.
 
-This is the first calibration on on-chain data. It is still **not** validation: the
-sample is 100 wallets with no external human/bot labels, drawn from five new
-memecoins' early buyers — a population heavily selected for snipers.
+Two runs are recorded here. **v1** measured the rules as shipped and found the
+`sandwich` rule too aggressive. **v2** redesigns `sandwich` from a lifetime count to a
+concentration of recent activity and re-measures. The v1 record is kept because it is
+the evidence that motivated the redesign — deleting it would leave the new thresholds
+looking like guesses.
 
-## Method, and the sampling correction that matters
+Neither run is *validation*: the sample has no human/bot labels, and it is drawn from
+five new memecoins' early buyers — a population heavily selected for snipers.
 
-The database holds per-wallet metrics, not swap histories (`swaps` and `positions`
-are empty for these wallets). Each wallet's history was fetched over Helius RPC
-(`getTransactionsForAddress`, full transactions) and reduced to `SwapObservation`s,
-`RoundTrip`s derived from per-mint buy→sell episodes, and a behavioural profile.
+## Method, and two corrections that matter
 
-**The first pass sampled oldest-first and was wrong.** Truncating at 1,500
-transactions from the *beginning* caught one wallet's quiet early months and scored
-it as 1 swap — while its ten most recent transactions were all swaps. It was
-correctly rejected but incorrectly bucketed as `insufficient_swaps`. The sample was
-re-fetched newest-first; every number below is from that second pass. Truncation now
-drops the distant past, and each observation records `sample_order` and `truncated`.
+The database holds per-wallet metrics, not swap histories, so each wallet's history was
+fetched over Helius RPC and reduced to swaps, round trips and a behavioural profile.
 
-Two further limitations, stated rather than buried:
+**1. Sampling direction.** The first pass sampled oldest-first and truncated at 1,500
+transactions, which caught one wallet's quiet early months and reported it as having
+1 swap while its ten most recent transactions were all swaps. Every number in both runs
+comes from a **newest-first** sample; truncation drops the distant past.
 
-- **Router detection is an allowlist** (Jupiter v6/v4, OKX router; nine pool
-  programs). A token-moving transaction with no allowlisted venue is counted as a
-  transfer, not a swap. That can only undercount swaps, which makes `router_only`
-  fire *less* often than it should — never more.
-- **25 wallets hit the 1,500-transaction cap**, so their rates describe the recent
-  window, not a lifetime.
+**2. Round-trip reconstruction.** The v1 pass opened an episode only when none was open
+and closed it on the next sell — so "buy, buy, buy, sell-all" collapsed into *one* round
+trip. A wallet with 1,462 swaps in three hours scored 21 round trips. v2 derives round
+trips with **FIFO lot matching**, the same semantics `positions.reconstruct` uses: each
+buy lot matched against the sells that consume it. This raised the confirmed bot
+`Gfds2Ur4UV` from 273 to **1,189** quick round trips and left `52NUhyYcpw` at 22 —
+because that wallet genuinely has few matched round trips (see below).
 
-## Step 1 — rejection rate and verdict distribution
+Limitations: router detection is an allowlist (a swap through an unnamed aggregator is
+counted as a transfer, which can only make `router_only` fire *less*); and 25 wallets hit
+the 1,500-transaction cap, so their rates describe the recent window, not a lifetime.
 
-| Outcome | Wallets | Share |
+---
+
+# v2 — concentration-based sandwich (2026-11-09)
+
+## The rule
+
+`sandwich(wallet, positions, swaps)` fires when, inside the last `window_days` of the
+wallet's **own** activity:
+
+- at least `min_round_trips` = **3** round trips lasted at most `max_seconds` = **90**,
+- in at least **two different mints**,
+- and those round trips are at least `min_share` = **0.20** of the window's swaps,
+- with at least `min_window_swaps` = **10** swaps in the window.
+
+Below 10 window swaps the rule returns **False**, not "not computable": a sparse trader
+is not a sandwich bot. Insufficient *lifetime* data remains
+`NOT_COMPUTABLE_INSUFFICIENT_SWAPS` at the `screen_wallet` level. The two conditions are
+different questions and keep different answers.
+
+**One deliberate deviation from the specification:** the window ends at the wallet's own
+latest swap, not wall-clock now. A screening run over a historical sample would otherwise
+see an empty window for every wallet that stopped trading a week ago and pass it by
+default. Anchoring to the last observed swap asks "was this wallet sandwiching while it
+was trading", which is the question the rule is for. Callers can pass `as_of` for a fixed
+cutoff.
+
+`SCREEN_RULE_VERSION` moved to `quality_screen/v2`, and `SANDWICH_RULE_VERSION` is
+`sandwich/v2`, because a v1 and a v2 verdict on the same wallet mean different things and
+the stored rows carry only `rule_version`.
+
+## Before and after, same 100 wallets
+
+| Outcome | v1 | v2 |
 |---|---|---|
-| `wallet.reject_sandwich` | 95 | 95% |
-| `wallet.not_computable_insufficient_swaps` | 3 | 3% |
-| `wallet.accepted` | 2 | 2% |
-| **total** | **100** | |
+| `wallet.reject_sandwich` | 95 | **67** |
+| `wallet.reject_throughput` | 0 | **5** |
+| `wallet.accepted` | 2 | **25** |
+| `wallet.not_computable_insufficient_swaps` | 3 | 3 |
+| **rejection rate** | **95%** | **72%** |
 
-Each rule evaluated alone, default thresholds:
+Per rule evaluated alone: `sandwich` 67, `throughput` 32, `router_only` 0,
+`genesis_burst` 0 (40 computable genesis windows, but `N = 2` is unreachable because each
+wallet sits in exactly one anchor's first-20 set).
 
-| Rule | Wallets it fires on | Share of sample |
-|---|---|---|
-| `genesis_burst` | 0 | 0% |
-| `sandwich` | 95 | 95% |
-| `throughput` | 32 | 32% |
-| `router_only` | 0 | 0% |
+**Overlap:** 27 wallets have ≥2 rules firing, down from 32 — and 5 wallets are now rejected
+by throughput **as the primary rule**, wallets sandwich no longer catches. That is the
+intended division of labour, not redundancy: sandwich answers "is flipping the strategy",
+throughput answers "is the volume infrastructure".
 
-`genesis_burst` had 40 computable genesis windows and fired on none. It **cannot**
-fire on this sample: every wallet is listed under exactly one anchor, so `N = 2` is
-unreachable. The zero is a property of the sample, not evidence about the rule.
+## The seven wallets that had to be checked individually
 
-## Rule overlap
+| Wallet | v1 | v2 | Quick trips / window swaps | Share | Prediction |
+|---|---|---|---|---|---|
+| `8a6JShiMBw…` (retail, the v1 mismatch) | reject_sandwich | **accepted** | 27 / 198 | 13.6% | **holds** |
+| `Gfds2Ur4UV…` (32,488 swaps/day) | reject_sandwich | **reject_sandwich** | 1,189 / 1,389 | 85.6% | **holds** |
+| `AviBqnzP8m…` (55.8 swaps/day, 626 mints) | reject_sandwich | **reject_sandwich** | 621 / 1,339 | 46.4% | **holds** |
+| `52NUhyYcpw…` (11,226 swaps/day) | reject_sandwich | **reject_throughput** | 22 / 1,462 | 1.5% | **does not hold** |
+| `8GSDbEhMy3…` (53.8 swaps/day, bot-like) | reject_sandwich | **accepted** | 215 / 1,260 | 17.1% | **does not hold** |
+| `FwA2rjEzvs…` (3 swaps / 51 days) | accepted | **accepted** | 0 / 3 | 0% | **holds** |
+| `GRmwzXEBvD…` (8 swaps / 40 days) | accepted | **accepted** | 1 / 7 | 14.3% | **holds** |
 
-| Pair | Wallets where both fire |
-|---|---|
-| sandwich + throughput | 32 |
-| sandwich + router_only | 0 |
-| throughput + router_only | 0 |
+Five of seven match the predictions. The two that do not are informative, and neither was
+tuned away:
 
-32 wallets have ≥2 heuristics firing, and **all of them are the sandwich ∩ throughput
-pair** — that is, throughput only ever fires on wallets sandwich already rejects, so
-on this sample throughput adds no decisions, only redundancy. `router_only` never
-co-fires because it never fires at all.
+- **`52NUhyYcpw` is not a sandwich wallet.** It makes 1,462 swaps in 3.2 hours but only
+  **23** of them are matched round trips — 22 of those under 90 s. It is buying or
+  distributing in one direction, not flipping. Its quick-trip share is 1.5%, *below* the
+  retail wallet's 13.6%; forcing sandwich to catch it would require a share floor around
+  0.01, which would re-capture every retail wallet. It is still rejected — by
+  `throughput`, at 11,226 swaps/day, which is the correct rule for what it does.
+- **`8GSDbEhMy3` is a near-miss at 17.1%** against a 20% floor. Its profile is bot-like
+  (median inter-swap gap 0 s, 10 active hours, 127 mints) and 215 of its 220 round trips
+  are sub-90 s, but its swap volume dilutes the share. The gap to the retail wallet is
+  13.6% → 17.1%: real but narrow, and a threshold placed between them would be fitted to
+  two wallets. It is recorded as a **known false negative**, not as a reason to move the
+  floor.
 
-## The `not_computable` subset — 3 wallets, deferred
+## Threshold sensitivity under v2
 
-| Wallet | Swaps | Reading |
-|---|---|---|
-| `5brv79eFZ2rGprXNvqgVJBkBptkkw8GJX1XydJyZLyAr` | 2 (both aggregator) | Genuinely thin: one mint, 50-day span |
-| `Bi4rd5FH5bYEN8scZ7wevxNZyNmKHdaBcvewdPFxYdLt` | 0 | Does not sign the transactions it appears in — passive or spam-targeted address |
-| `ardinRsN1mNYVeoJWTBsWeYeXvuR9UUDGMsCDKpb6AT` | 0 | Same |
-
-No disposition is recorded for these; they are unscreened, not cleared.
-
-## Step 2 — threshold sensitivity (each variant changed in isolation)
-
-### `throughput_max_swaps_per_day` — LOAD-BEARING
-
-| Threshold | Wallets it fires on |
-|---|---|
-| 50 | 58 |
-| 100 | 51 |
-| **200** (shipped) | **32** |
-| 500 | 14 |
-| 1000 | 9 |
-
-Monotone and steep: 49 wallets separate the extremes. This threshold changes the
-answer materially and is worth fitting.
-
-### `sandwich_max_seconds` — INERT
-
-| Window | Wallets it fires on |
-|---|---|
-| 30 s | 95 |
-| 60 s | 95 |
-| **90 s** (shipped) | **95** |
-| 180 s | 95 |
-
-**Completely flat.** The rule does not fire on "90-second flips"; the quick round
-trips behind these verdicts are seconds long. Widening the window six-fold changes
-nothing, and it cannot be narrowed enough to matter without falling below real
-execution time. The threshold is not the problem — the rule's shape is (see below).
-
-### `router_only_min_aggregator_fraction` — INERT (and structurally so)
-
-| Threshold | Wallets it fires on |
-|---|---|
-| 0.80 | 0 |
-| 0.90 | 0 |
-| **0.95** (shipped) | **0** |
-| 0.99 | 0 |
-
-Zero at every setting. The rule also requires **zero** direct pool swaps, and this
-sample trades almost entirely directly against pump.fun/PumpSwap/Raydium (e.g. 1,389
-of 1,389 swaps direct for the most active wallet). `router_only` is inert here for a
-real reason — early memecoin buyers are pool-direct — and would need a sample of
-aggregator-only traders to say anything at all.
-
-### `genesis_burst` (N, Y) — structurally inert
-
-| N | Y = 30 s | Y = 60 s | Y = 120 s |
+| Rule / threshold | Values | Wallets fired | Load-bearing? |
 |---|---|---|---|
-| 2 | 0 | 0 | 0 |
-| 3 | 0 | 0 | 0 |
+| `throughput_max_swaps_per_day` | 50 / 100 / **200** / 500 / 1000 | 58 / 51 / **32** / 14 / 9 | **yes** (spread 49) |
+| `sandwich_min_share` | 0.10 / 0.15 / **0.20** / 0.30 / 0.40 | 80 / 79 / **67** / 53 / 39 | **yes** (spread 41) |
+| `sandwich_window_days` | 7 / 14 / **30** / 60 / 90 | 58 / 60 / **67** / 68 / 72 | **yes** (spread 14) |
+| `sandwich_max_seconds` | 30 / 60 / **90** / 180 | 51 / 65 / **67** / 77 | **yes** (spread 26) |
+| `router_only_min_aggregator_fraction` | 0.80 / 0.90 / **0.95** / 0.99 | 0 / 0 / **0** / 0 | no (inert) |
+| `genesis_burst` (N, Y) | N∈{2,3} × Y∈{30,60,120} | 0 everywhere | unmeasurable here |
 
-Every cell is 0 because no wallet is in two anchors' first-20 sets. This sweep is
-uninformative by construction, not evidence of inertness.
+The redesign flipped the most important column. Under v1, `sandwich_max_seconds` was
+**completely inert** (95 wallets at every window from 30 s to 180 s) because a lifetime
+count does not depend on the window. Under v2 every sandwich parameter moves the answer,
+which is what a rule that measures concentration should look like — the thresholds now
+mean something, which is exactly why they must not be fitted to 100 unlabelled wallets.
 
-## Step 3 — spot-check against activity profiles
+`router_only` remains inert for a real reason: this sample trades pool-direct (the most
+active wallet: 1,389 of 1,389 swaps direct), so its "no direct pool interaction" conjunct
+cannot hold.
 
-Solscan's account pages are client-rendered and return only a shell to a text fetch,
-so the substitution the user authorised was used: the same RPC transaction data, with
-the ten most recent transactions examined per wallet. The "manual assessment" below is
-therefore a profile judgement (rate, cadence, spread, amount variance), not a human
-reviewer's.
+---
 
-Only **2 accepted wallets exist** in this sample, so the requested 5 rejected + 5
-accepted cannot be met; all 2 accepted are included.
+# v1 — the run that motivated the redesign (2026-11-09)
 
-| Wallet | Verdict | Swaps | Swaps/day | Median gap | Distinct hours | Mints | Amount CV | Assessment |
-|---|---|---|---|---|---|---|---|---|
-| `Gfds2Ur4UV…73Pn7` | reject_sandwich | 1,389 | 32,488 | 1 s | 3 | 158 | 1.46 | **Bot** — 1,389 swaps in 62 minutes |
-| `52NUhyYcpw…BJgAt` | reject_sandwich | 1,462 | 11,092 | 0 s | 4 | 31 | 5.69 | **Bot** — same-second bursts |
-| `AviBqnzP8m…o869N` | reject_sandwich | 1,339 | 55.8 | 7 s | 18 | 626 | 0.76 | **Bot** — 626 mints, 7 s cadence |
-| `8GSDbEhMy3…NEM32a` | reject_sandwich | 1,260 | 53.8 | 0 s | 10 | 127 | 1.47 | **Bot-like** — same-second fills |
-| `8a6JShiMBw…Ry18k` | reject_sandwich | 207 | 0.5 | 597 s | 24 | 79 | 0.69 | **Discretionary** — 1.7-year history, all hours, 10-min cadence |
-| `FwA2rjEzvs…vPdta` | accepted | 3 | 0.06 | 990 s | 24 | 3 | 1.18 | **Human** — 3 swaps in 51 days |
-| `GRmwzXEBvD…pk9Tg` | accepted | 8 | 0.2 | 1,309 s | 24 | 3 | 1.48 | **Human** — 8 swaps in 40 days |
+| Outcome | Wallets |
+|---|---|
+| `wallet.reject_sandwich` | 95 |
+| `wallet.not_computable_insufficient_swaps` | 3 |
+| `wallet.accepted` | 2 |
 
-**Agreement: 7 of 8.** One mismatch, and it is the informative one:
+Every rejection came from `sandwich`, and a 32,488-swaps/day bot and a 0.5-swaps/day
+retail trader received the same verdict. The cause was the rule's shape, not its
+threshold: v1 counted quick round trips over the entire observed history with no rate and
+no recency, so 30 sub-90 s flips across 417 days condemned a two-year retail record. The
+`sandwich_max_seconds` sweep was flat at 95 wallets for 30/60/90/180 s, confirming the
+threshold was not where the decision lived.
 
-- `8a6JShiMBw…` — 0.5 swaps/day over 417 days, active in all 24 hours, 10-minute
-  median cadence, moderate amount variance: a discretionary trader. It is rejected
-  because **30 of its 207 swaps** were round trips under 90 s across 79 mints. Two
-  opportunistic scalps per month are enough to condemn a two-year retail history,
-  because the rule counts them over the *entire* history with no rate and no
-  recency.
+Per-rule firing at v1: `sandwich` 95, `throughput` 32, `router_only` 0, `genesis_burst` 0.
+Overlap: 32 wallets, all sandwich ∩ throughput — throughput added no decision, only
+redundancy. That redundancy is what v2 removed.
 
-The 32,488/day wallet and the 0.5/day wallet receive the same verdict from the same
-rule. That is the finding.
+---
 
-## Conclusion
+# Conclusion
 
-**Filter appears too aggressive on the 100-wallet sample.** 95% rejected, and the
-rate is not evidence of 95% bots:
+**Filter sandwich rule redesigned to concentration-based. Re-calibration: working on the
+100-wallet sample, with one known false negative.** Rejection is 72% (inside a plausible
+band for a bot-selected population), the human regression guard holds, both unambiguous
+bots are still caught by `sandwich`, throughput now makes 5 decisions of its own, and no
+human wallet is rejected. The residual failures are `8GSDbEhMy3` (bot-like, 17.1% share,
+accepted) and `52NUhyYcpw` (rejected, but by throughput rather than sandwich, because it
+is not sandwiching).
 
-1. `sandwich` produces **every** rejection (95/95) and its window is inert across
-   30–180 s, so no threshold choice rescues it.
-2. It fires on wallets whose own profiles are plainly discretionary, because it
-   counts quick round trips over the whole history without a rate, a recency window,
-   or a minimum share.
-3. `throughput` is redundant here: it fires only on wallets sandwich already rejects,
-   so it changes no outcome — although it is the one **load-bearing** threshold and
-   the one worth fitting.
-4. `router_only` and `genesis_burst` cannot be measured on this sample at all, for
-   structural reasons stated above.
+`SCREEN_DEFAULTS_VALIDATED` remains **False**. This is a sample-level observation on 100
+unlabelled wallets, not population-level validation against external ground truth. The
+next validation target is a labelled bundled/clean set from an external source, or a
+larger anchor sample (S3 discovery or additional user-supplied anchors).
 
-Per instruction, **no threshold was changed and no rule was modified.**
-`SCREEN_DEFAULTS_VALIDATED` remains `False`.
+### What would change the conclusion
 
-### What would change the verdict
-
-- A `sandwich` shape that measures *share* of quick round trips rather than their
-  count, or restricts them to a recency window — a logic change, deliberately not
-  made here.
-- A labelled sample (known-bundled / known-clean) to convert "looks like a bot" into
-  an error rate.
-- A sample including wallets in ≥2 anchor sets, without which `genesis_burst` has no
+- External labels, which would turn "looks like a bot" into an error rate and let the
+  13.6%–17.1% gap be located against real classes rather than two wallets.
+- A sample containing wallets in ≥2 anchor sets, without which `genesis_burst` has no
   usable evidence.
+- A rule that measures round-trip *rate per active hour* rather than share of swaps,
+  which would separate `8GSDbEhMy3` without moving the retail wallet.

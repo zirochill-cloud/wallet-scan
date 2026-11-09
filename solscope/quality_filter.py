@@ -92,6 +92,10 @@ __all__ = [
     "MIN_SWAPS_TO_SCREEN",
     "SANDWICH_MAX_SECONDS",
     "SANDWICH_MIN_ROUND_TRIPS",
+    "SANDWICH_MIN_SHARE",
+    "SANDWICH_MIN_WINDOW_SWAPS",
+    "SANDWICH_RULE_VERSION",
+    "SANDWICH_WINDOW_DAYS",
     "THROUGHPUT_MAX_SWAPS_PER_DAY",
     "ROUTER_ONLY_MIN_AGGREGATOR_FRACTION",
     "SCREEN_DEFAULTS_VALIDATED",
@@ -102,6 +106,7 @@ __all__ = [
     "SwapObservation",
     "FilterVerdict",
     "genesis_burst",
+    "recent_window",
     "sandwich",
     "throughput",
     "router_only",
@@ -139,8 +144,32 @@ NOT_PORTED_HEURISTICS: tuple[str, ...] = ()
 #: **A guess** — see NOTES.md § QUALITY_FILTER_IMPLEMENTED.
 SANDWICH_MAX_SECONDS: int = 90
 
-#: How many such round trips, in different mints, make a sandwich wallet.
-SANDWICH_MIN_ROUND_TRIPS: int = 2
+#: How many such round trips **inside the recent window** make a sandwich wallet.
+SANDWICH_MIN_ROUND_TRIPS: int = 3
+
+#: How far back "recent" reaches, in days. Measured, not guessed: the real-data
+#: calibration found a 417-day retail history carrying 30 sub-90 s round trips —
+#: roughly two a month — while a confirmed bot carried hundreds an hour. A lifetime
+#: count cannot tell those apart; a 30-day window can.
+SANDWICH_WINDOW_DAYS: int = 30
+
+#: Share of the recent window's swaps that must be quick round trips. A dedicated
+#: sandwich wallet spends most of its activity flipping; a human with one opportunistic
+#: scalp among fifty trades sits near 2%.
+#: **A designed default, not a fitted one** — see the calibration for measured shares.
+SANDWICH_MIN_SHARE: float = 0.20
+
+#: Fewer recent swaps than this and a *share* is not a meaningful statistic. The
+#: wallet is not judged a sandwich — a sparse trader is not a sandwich bot — which is
+#: deliberately different from ``MIN_SWAPS_TO_SCREEN``: insufficient *lifetime* data
+#: is NOT_COMPUTABLE, but a thin *window* on an otherwise screened wallet is a pass.
+SANDWICH_MIN_WINDOW_SWAPS: int = 10
+
+#: Version of the sandwich rule's semantics. v1 counted quick round trips over the
+#: wallet's entire history with no rate; v2 measures their share of recent activity.
+#: Recorded because a v1 verdict and a v2 verdict on the same wallet mean different
+#: things, and the stored rows carry only ``rule_version``.
+SANDWICH_RULE_VERSION: str = "sandwich/v2"
 
 #: Swaps per day above which a wallet is treated as infrastructure rather than a
 #: participant. **A guess.**
@@ -168,6 +197,9 @@ DEFAULT_SCREEN_CONFIG: dict[str, object] = {
     "genesis_burst_max_seconds": GENESIS_BURST_MAX_SECONDS,
     "sandwich_max_seconds": SANDWICH_MAX_SECONDS,
     "sandwich_min_round_trips": SANDWICH_MIN_ROUND_TRIPS,
+    "sandwich_window_days": SANDWICH_WINDOW_DAYS,
+    "sandwich_min_share": SANDWICH_MIN_SHARE,
+    "sandwich_min_window_swaps": SANDWICH_MIN_WINDOW_SWAPS,
     "throughput_max_swaps_per_day": THROUGHPUT_MAX_SWAPS_PER_DAY,
     "router_only_min_aggregator_fraction": ROUTER_ONLY_MIN_AGGREGATOR_FRACTION,
     "min_swaps_to_screen": MIN_SWAPS_TO_SCREEN,
@@ -220,7 +252,7 @@ class RuleId(str, Enum):
     #: Wallet was within N seconds of genesis for at least N anchors.
     GENESIS_BURST = "rule.genesis_burst"
 
-    #: Two or more round trips of at most ``SANDWICH_MAX_SECONDS`` in different mints.
+    #: Quick round trips are a large enough share of recent swaps (``sandwich/v2``).
     SANDWICH = "rule.sandwich"
 
     #: Mean swap rate above ``THROUGHPUT_MAX_SWAPS_PER_DAY``.
@@ -622,30 +654,81 @@ def round_trips(positions: Sequence[object]) -> list[RoundTrip]:
 # ---------------------------------------------------------------------------
 
 
+def recent_window(
+    swaps: Sequence[SwapObservation],
+    window_days: int,
+    *,
+    as_of: _dt.datetime | None = None,
+) -> list[SwapObservation]:
+    """Swaps inside the last ``window_days``, ending at ``as_of``.
+
+    ``as_of`` defaults to the wallet's **own latest swap**, not wall-clock now. A
+    screening run over a historical sample would otherwise see an empty window for
+    every wallet that stopped trading a week ago and pass it by default; anchoring to
+    the last observed swap asks "was this wallet a sandwich bot while it was trading",
+    which is the question the rule is for. Callers that want a fixed cutoff pass it.
+    """
+    if not swaps:
+        return []
+    end = as_of or max(s.at for s in swaps)
+    start = end - _dt.timedelta(days=window_days)
+    return [s for s in swaps if start <= s.at <= end]
+
+
 def sandwich(
     wallet: str,
     positions: Sequence[object],
+    swaps: Sequence[SwapObservation] = (),
     *,
     min_round_trips: int = SANDWICH_MIN_ROUND_TRIPS,
     max_seconds: int = SANDWICH_MAX_SECONDS,
+    window_days: int = SANDWICH_WINDOW_DAYS,
+    min_share: float = SANDWICH_MIN_SHARE,
+    min_window_swaps: int = SANDWICH_MIN_WINDOW_SWAPS,
+    as_of: _dt.datetime | None = None,
 ) -> bool:
-    """``>= min_round_trips`` round trips of at most ``max_seconds``, in different mints.
+    """Concentration of quick round trips in recent activity (``sandwich/v2``).
 
-    A sandwich is a buy and a sell inside one block or two — the wallet extracts the
-    spread it created and never holds a position. The *different mints* requirement
-    is what separates that from a single scalped trade, which is ordinary behaviour:
-    one fast flip says nothing, several across unrelated tokens says the wallet does
-    it as a strategy.
+    Fires when, inside the last ``window_days`` of the wallet's own activity:
 
-    ``wallet`` is accepted so every rule in this module has the same call shape; the
-    rule is a pure function of the positions.
+    * at least ``min_round_trips`` round trips lasted at most ``max_seconds``,
+    * in at least two different mints (three fast flips in one token is scalping one
+      launch, not a sandwich operation), and
+    * those round trips are at least ``min_share`` of the window's swaps.
+
+    **Why a share and not a count.** The v1 rule counted quick round trips over the
+    entire observed history, which is not the same question. Real-data calibration on
+    the 100 anchor buyers found a two-year retail wallet (0.5 swaps/day, active in all
+    24 hours) rejected because 30 of its 207 lifetime swaps were sub-90 s flips — about
+    two a month — while a 32,488 swaps/day bot received the same verdict. Counting
+    cannot separate a habit from a strategy; proportion can.
+
+    A window with fewer than ``min_window_swaps`` swaps returns False rather than
+    "not computable": the wallet *has* been screened by the other rules, and a sparse
+    trader is simply not a sandwich bot. Insufficient lifetime data remains
+    ``NOT_COMPUTABLE_INSUFFICIENT_SWAPS`` at the ``screen_wallet`` level — the two
+    conditions are different questions and keep different answers.
+
+    ``max_seconds`` is the one v1 threshold this rule keeps: calibration showed the
+    30-180 s sweep to be completely flat, so the window's duration and the share carry
+    the decision, and inventing precision here would be false confidence.
     """
+    if len(swaps) < min_window_swaps:
+        return False
+    window = recent_window(swaps, window_days, as_of=as_of)
+    if len(window) < min_window_swaps:
+        return False
+    start = (as_of or max(s.at for s in swaps)) - _dt.timedelta(days=window_days)
     quick = [
         t for t in round_trips(positions)
-        if t.hold_seconds is not None and t.hold_seconds <= max_seconds
+        if t.hold_seconds is not None
+        and t.hold_seconds <= max_seconds
+        and t.opened_at is not None
+        and t.opened_at >= start
     ]
-    mints = {t.mint for t in quick}
-    return len(quick) >= min_round_trips and len(mints) >= 2
+    if len({t.mint for t in quick}) < 2:
+        return False
+    return len(quick) >= min_round_trips and len(quick) / len(window) >= min_share
 
 
 def throughput(
@@ -729,7 +812,7 @@ def genesis_burst(
 #: Version carried by :func:`screen_wallet` verdicts. Separate from ``RULE_VERSION``
 #: (the genesis-burst-only version) so that adding three rules did not relabel every
 #: existing burst verdict as having been screened by four.
-SCREEN_RULE_VERSION = "quality_screen/v1"
+SCREEN_RULE_VERSION = "quality_screen/v2"
 
 
 def screen_wallet(
@@ -822,16 +905,24 @@ def screen_wallet(
         )
 
     # 3-5. the per-wallet heuristics, in order.
-    quick = [
+    window = recent_window(swaps, int(cfg["sandwich_window_days"]))
+    window_quick = [
         t for t in trips
         if t.hold_seconds is not None
         and t.hold_seconds <= int(cfg["sandwich_max_seconds"])
+        and t.opened_at is not None
+        and t.opened_at >= max(s.at for s in swaps) - _dt.timedelta(
+            days=int(cfg["sandwich_window_days"]))
     ]
     if sandwich(
         wallet,
         positions,
+        swaps,
         min_round_trips=int(cfg["sandwich_min_round_trips"]),
         max_seconds=int(cfg["sandwich_max_seconds"]),
+        window_days=int(cfg["sandwich_window_days"]),
+        min_share=float(cfg["sandwich_min_share"]),
+        min_window_swaps=int(cfg["sandwich_min_window_swaps"]),
     ):
         return FilterVerdict(
             wallet=wallet,
@@ -842,11 +933,17 @@ def screen_wallet(
             rule_id=RuleId.SANDWICH,
             measured={
                 **measured,
-                "quick_round_trips": len(quick),
-                "quick_mints": sorted({t.mint for t in quick}),
+                "quick_round_trips": len(window_quick),
+                "window_swaps": len(window),
+                "quick_share": (round(len(window_quick) / len(window), 4)
+                                if window else 0.0),
+                "quick_mints": len({t.mint for t in window_quick}),
                 "min_round_trips": cfg["sandwich_min_round_trips"],
+                "min_share": cfg["sandwich_min_share"],
+                "window_days": cfg["sandwich_window_days"],
                 "max_seconds": cfg["sandwich_max_seconds"],
             },
+            notes=("concentration rule: quick round trips are a share of recent swaps",),
         )
 
     if throughput(
@@ -905,7 +1002,9 @@ def screen_wallet(
             **measured,
             "aggregator_fraction": round(routed / len(swaps), 4),
             "direct_pool_swaps": direct,
-            "quick_round_trips": len(quick),
+            "quick_round_trips": len(window_quick),
+            "window_swaps": len(window),
+            "quick_share": (round(len(window_quick) / len(window), 4) if window else 0.0),
         },
         notes=("all four rules evaluated; none fired",),
     )
