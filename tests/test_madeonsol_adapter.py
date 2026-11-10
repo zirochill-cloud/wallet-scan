@@ -206,6 +206,21 @@ def test_parsing() -> None:
     shuffled["entries"].reverse()
     check("entry order sorts by rank", [e.rank for e in parse_entry_order(shuffled).entries] == [1, 2, 3])
 
+    # Live regression (2026-11-10): the per-token route carries token_mint in the
+    # envelope only, so a row without its own mint must inherit it — otherwise
+    # every row is dropped and the token looks KOL-free.
+    per_token = parse_trades({
+        "token_mint": "M_ENV", "count": 1, "has_more": True,
+        "trades": [{"id": "u1", "wallet": "W9", "kol_name": "k9", "action": "buy",
+                    "sol_amount": 1.0, "market_cap_usd_at_trade": 5_822.62,
+                    "price_usd_at_trade": 0.00001, "tx_signature": "s9",
+                    "traded_at": "2026-11-10T19:12:15+00:00"}],
+    })
+    check("per-token trades inherit the envelope mint (not dropped)",
+          len(per_token) == 1 and per_token[0].token_mint == "M_ENV"
+          and per_token[0].market_cap_usd_at_trade == 5_822.62,
+          f"{per_token}")
+
     null_mcap = parse_trades({"trades": [{
         "wallet": "W1", "token_mint": "M1", "action": "sell",
         "market_cap_usd_at_trade": None, "traded_at": "2026-11-01T10:05:00Z",
@@ -438,6 +453,16 @@ def test_request_shape() -> None:
     check("Bearer auth header sent", headers.get("authorization") == f"Bearer {KEY}")
     check("per-KOL feed uses /kol/feed?kol=", "/kol/feed?kol=WALLET123" in url, url)
     check("None params are omitted, not sent as 'None'", "since=None" not in url, url)
+
+    token_router = Router({"/kol/tokens/M9/trades": {
+        "token_mint": "M9", "count": 1, "has_more": False,
+        "trades": [{"wallet": "W1", "kol_name": "k", "action": "buy",
+                    "market_cap_usd_at_trade": 4_000.0, "traded_at": "2026-11-10T19:00:00Z"}],
+    }})
+    made = MadeOnSolClient(KEY, usage_path=None, opener=token_router)
+    rows = made.get_token_kol_trades("M9", limit=20)
+    check("get_token_kol_trades returns rows with the requested mint",
+          len(rows) == 1 and rows[0].token_mint == "M9", f"{rows}")
 
 
 # --------------------------------------------------------------------------- #

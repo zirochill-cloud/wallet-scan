@@ -286,15 +286,25 @@ def parse_leaderboard(payload: dict, *, period: str = "7d") -> list[KOLRecord]:
     return out
 
 
-def parse_trades(payload: dict) -> list[KOLTrade]:
+def parse_trades(payload: dict, *, fallback_mint: str | None = None) -> list[KOLTrade]:
+    """Parse trade rows from either trade route.
+
+    ``/kol/feed`` puts ``token_mint`` on every row, but
+    ``/kol/tokens/{mint}/trades`` puts it **only in the envelope** (verified live
+    2026-11-10: rows carry ``wallet``/``kol_name``/mcap but no mint). Without
+    ``fallback_mint`` every row of the per-token route is silently discarded,
+    which reads as "this token has no KOL trades" — a false negative that is
+    indistinguishable from a real empty page.
+    """
     rows = payload.get("trades")
     if not isinstance(rows, list):
         return []
+    envelope_mint = payload.get("token_mint") or fallback_mint
     out: list[KOLTrade] = []
     for row in rows:
         if not isinstance(row, dict):
             continue
-        mint = row.get("token_mint") or row.get("mint")
+        mint = row.get("token_mint") or row.get("mint") or envelope_mint
         wallet = row.get("wallet") or row.get("wallet_address")
         if not isinstance(mint, str) or not isinstance(wallet, str):
             continue
@@ -571,7 +581,8 @@ class MadeOnSolClient:
         """Every stored KOL trade on one mint, newest first (FREE; BASIC is
         clamped to 20 rows/page). This is where MC-at-trade comes from."""
         params = {"limit": limit, "cursor": cursor, "action": action}
-        return parse_trades(self._get(f"/kol/tokens/{urllib.parse.quote(mint)}/trades", params))
+        payload = self._get(f"/kol/tokens/{urllib.parse.quote(mint)}/trades", params)
+        return parse_trades(payload, fallback_mint=mint)
 
     def get_entry_order(self, mint: str, *, limit: int = EARLY_RANK_MAX) -> EntryOrder:
         """KOL first-buy order on one mint (FREE, real-time). Gives ``rank`` and
