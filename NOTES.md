@@ -499,6 +499,23 @@ five ad-tracking UUIDs (impression and creative IDs) and the freebuff project
 path id. Not credentials, but not design material either; they were redacted in
 `docs/RECOVERED_FROM_TRANSCRIPT.md` rather than carried into the repo.
 
+**`min_n_touches` counts touches, not distinct KOL wallets (2026-11-10,
+`/kol/first-touches`).** The parameter reads like "at least N KOLs bought this
+token", and it is not: it counts touch *events*, so one KOL buying a token twice
+satisfies `min_n_touches=3`. Measured on the free tier: of 15 candidates the
+server returned for `min_n_touches=3`, only **4** confirmed as >=3 distinct KOL
+wallets via `/kol/tokens/{mint}/entry-order` (27% hit rate); the other 11 had
+1-2 distinct buyers. A candidate list built on the filter alone would have been
+73% wrong, and wrong in the flattering direction — every bad row looked like
+consensus. Always confirm with `/entry-order` (its `total_kol_buyers` counts
+distinct wallets) before trusting `min_n_touches`.
+
+**Rule:** this is the same discipline as `not_computable` vs `reject`. A
+provider field's *semantics* must be verified against its own data, not inferred
+from its name; a filter that over-reports is worse than one that under-reports,
+because it manufactures evidence.
+
+
 ---
 
 ## § PHASE1A_AUDIT

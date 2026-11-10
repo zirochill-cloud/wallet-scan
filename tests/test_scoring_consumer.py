@@ -320,12 +320,15 @@ def logic_checks() -> None:
     thin = evaluate_gate(thin_conn, "GoodThin", as_of=AS_OF, config=CONFIG)
     check("thin wallet composite is 59.51 (design sec 6 says 60.51 - see the report)",
           thin.composite_confidence == Decimal("59.51"), f"{thin.composite_confidence}")
-    check("thin wallet fails on the anchor conjunct, not on confidence",
-          thin.gate_passed is False
-          and thin.gate_reason == "distinct_anchors below minimum (2 < 3)",
+    # Path 3 (2026-11-10): the anchor floor is 1, so a 2-anchor wallet clears it.
+    # The gate no longer hides thin wallets; the sample factor, shrinkage and the
+    # bands price them (investigate, not track).
+    check("thin wallet (2 anchors) clears the anchor floor at Path 3",
+          thin.gate_passed is True and thin.gate_reason == "all thresholds met",
           thin.gate_reason)
-    check("the thin composite is well above the 40 floor, so only anchors can stop it",
-          thin.composite_confidence > CONFIG["confidence_gate"]["confidence_min"])
+    check("the floor it cleared is 1 and its composite is still above 40",
+          CONFIG["confidence_gate"]["min_distinct_anchors"] == 1
+          and thin.composite_confidence > CONFIG["confidence_gate"]["confidence_min"])
 
     # The design's original sec 6 column was computed with this form. It is kept
     # for the day scores.band_basis flips to overall_score (D21/D23), and it is
@@ -726,10 +729,15 @@ def db_checks() -> bool:
         return out
 
     def store(conn, wallet, max_r, rank, pre):
+        # min_anchors=2 keeps this fixture about the CONSUMER, not about the
+        # aggregation floor: wallet C (1 anchor) and wallet B's 1-of-3 buyer rank
+        # must stay not_rankable so the re-normalisation and pruning paths are
+        # exercised. Path 3 moved the default floor to 1, so the fixture states
+        # its floor explicitly instead of inheriting it.
         for metric, aggregate in (
-            (MR, aggregate_max_subsequent_return(rows(max_r, MR, wallet))),
-            (BR, aggregate_buyer_rank_at_entry(rows(rank, BR, wallet))),
-            (PV, aggregate_pct_entries_before_volume_spike(rows(pre, PV, wallet))),
+            (MR, aggregate_max_subsequent_return(rows(max_r, MR, wallet), min_anchors=2)),
+            (BR, aggregate_buyer_rank_at_entry(rows(rank, BR, wallet), min_anchors=2)),
+            (PV, aggregate_pct_entries_before_volume_spike(rows(pre, PV, wallet), min_anchors=2)),
         ):
             write_aggregate(conn, wallet, aggregate, RULE)
 
@@ -954,7 +962,7 @@ def db_checks() -> bool:
         check("the composite and both thresholds are stored as evidence",
               close(factors.get("confidence_composite"), "42")
               and close(factors.get("threshold.confidence_min"), "40")
-              and close(factors.get("threshold.min_distinct_anchors"), "3"),
+              and close(factors.get("threshold.min_distinct_anchors"), "1"),  # Path 3
               f"{factors}")
         check("the confidence sub-score explains the composite and the gate",
               "100 x sum(weight x factor)" in conn.execute(

@@ -42,46 +42,45 @@ is `d03acd6` (composite + gate), `a5a1bc2` (band basis), `969bdab` (bands + read
 
 ## 3. What it requires to produce rankings
 
-**Anchor mints are not enough.** The consumer reads `wallet_aggregates` and the anchor tables; an
-anchor **mint** becomes rows only after discovery and seeding. Two paths get there, and neither is
-automated today.
+Two paths to rankings are now available. They answer different questions, and
+neither is a substitute for the other.
 
-What the anchor set itself must satisfy, on either path:
+### Path A — investigate-band output (available now)
 
-- 3–5 memecoin mints from tokens that launched in **different weeks** (different deployers or
-  weeks, so anchors are independent), within the last **30–90 days** so price history exists;
-- each token **pumped ≥5×** within 30 days of launch, so the retrospective question ("did this
-  wallet buy before the move?") has a real answer;
-- enough anchor coverage that a wallet has **≥3 distinct anchors**. Two anchors compute but cannot
-  be ranked (`confidence_gate.min_distinct_anchors`), so a two-anchor wallet lands in
-  `promising_thin` or `exclude` no matter how good it looks.
+`aggregation.MIN_ANCHORS = 1` and `confidence_gate.min_distinct_anchors = 1`
+(Path 3, 2026-11-10) yield **investigate-band** wallets from the existing
+5 anchors x 20 buyers. The output is a list of wallets worth human review, not a
+track-band ranking: one anchor is an anecdote, and the sample factor plus
+shrinkage (`1/(1+5)`) price it as such. A raw 82 shrinks to 55.33 and adjusts to
+~46.49 at confidence 84 — investigate, never promising_thin, and only if the
+confidence floor is met at all. See `docs/PHASE1B_STRUCTURAL_FINDING.md` § Path 3.
 
-### Path A — mints plus S3 discovery (needs S3 built)
+**Measured on the current 100 wallets (2026-11-10):** all 100 clear the anchor
+conjunct (1 >= 1) and all 100 are excluded by the *confidence* conjunct at 34.00
+< 40. The composite is 30.00 coverage + 4.00 sample + 0 provenance + 0 recency +
+0 metadata: the ceiling for any wallet at confidence 34 is `shrink(100) x 0.34 =
+19.83` adjusted, so investigate (>= 40) is arithmetically unreachable without
+more per-wallet data. `seed_anchors.py` writes no positions, so price provenance
+is 0. Path A therefore needs positions (or a deliberate, documented drop in
+`confidence_min`) before it produces a band above `exclude`.
 
-Supply anchor mints → **S3 discovery** (mint → genesis → first-20 buyers; *not implemented*) →
-seed the anchor tables from that output → `positions` → `consumer` → `scores`.
+### Path B — track-band output (requires more anchors)
 
-This is the full pipeline with no manual step, and it is **one turn of work** for a small set. It
-is not built, and nothing downstream of it can be exercised without it or Path B.
+With the standard gates (`min_distinct_anchors = 3`), track-band rankings require
+a wallet to appear in **>=3 anchor first-20 lists**. Free-tier anchor discovery
+cannot reach the July-September 2026 window: the live `/kol/first-touches` feed
+was measured at 7 hours of history (45 pages, 900 events), and reaching 30 days
+needs ~4,500 pages (~22 days of full quota); walking `/kol/feed?kol=` for 100
+KOLs to cover 30 days costs ~19,800 calls (~99 days of quota). Options:
 
-### Path B — mints plus manual seeding (workaround, works today)
-
-Supply anchor mints → identify the first-20 buyers for each mint by hand (Solscan's token page,
-ordered by first buy) → seed the anchor tables with a one-off script calling `write_anchor`,
-`write_verdict` and `write_metric` → `positions` → `consumer` → `scores`.
-
-Legitimate for a small curated set: 3–5 anchors, ~15 wallets each is an hour of browser work,
-and the rows it produces are identical in shape to Path A's. It needs no discovery code. The
-input format is written up in `data/seed_anchors.md`; the script itself does not exist yet.
-
-### Both paths end in the same place
-
-`consumer` → `scores`, reading `wallet_aggregates` plus anchor rows. **Neither is currently
-automated.** Without either path, no wallet passes the gate: every wallet lands in
-`promising_thin` or `exclude`, and `scores` prints an empty ranking. That is the tool working,
-not failing.
-
----
+1. **User-supplied anchors at 30+ scale** — arithmetically weak: overlapping
+   coverage gives ~0.2 wallets at N=30 and ~0.95 at N=196, so 30 anchors is not
+   meaningfully better than 5 for this gate.
+2. **PRO tier (EUR 43/mo)** for `/kol/coordination/history`, which is the
+   designed Path 2 sources. A cost decision, not an engineering one.
+3. **Watch-and-wait accumulation** — run the free discovery probe daily, log
+   candidates, verify them after 30 days. Design note:
+   `docs/WATCH_AND_WAIT.md`.
 
 ## 4. What is deferred, and why
 

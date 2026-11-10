@@ -124,8 +124,10 @@ def main() -> int:
     gate_cfg = cfg["confidence_gate"]
     check("confidence_gate.confidence_min present and numeric",
           isinstance(gate_cfg.get("confidence_min"), (int, float)))
+    # Path 3 (2026-11-10): the floor is 1 so single-anchor wallets can be ranked
+    # as investigate-band candidates; it stays its own key (D5) either way.
     check("confidence_gate.min_distinct_anchors is its own key (D5)",
-          gate_cfg.get("min_distinct_anchors") == 3, f"{gate_cfg}")
+          gate_cfg.get("min_distinct_anchors") == 1, f"{gate_cfg}")
     check(
         "confidence gate is below the 'track' band requirement",
         gate_cfg["confidence_min"] < bands["track"],

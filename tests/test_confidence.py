@@ -328,17 +328,22 @@ def db_checks(dsn: str) -> None:
               bad_rich.gate_passed is True, bad_rich.gate_reason)
         check("19 distinct computed anchors is what the conjunct reads",
               rich.distinct_anchors == 19, str(rich.distinct_anchors))
-        check("thin wallet fails on anchors, not on confidence",
-              thin.gate_passed is False
-              and thin.gate_reason == "distinct_anchors below minimum (2 < 3)",
+        # Path 3 (2026-11-10): the anchor floor is 1, so two anchors clear it and
+        # the thin wallet's 59.51 composite is what decides. It passes the gate —
+        # the thinness is priced by the sample factor and shrinkage, not refused.
+        check("thin wallet (2 anchors) now clears the anchor floor",
+              thin.gate_passed is True
+              and thin.gate_reason == "all thresholds met",
               thin.gate_reason)
+        check("the floor it cleared is 1",
+              CONFIG["confidence_gate"]["min_distinct_anchors"] == 1)
         check("the thin composite (59.51) is far above the 40 floor",
               thin.composite_confidence > CONFIG["confidence_gate"]["confidence_min"])
         check("the gate result carries factors, weights and thresholds",
               set(rich.components) == {"coverage", "price_provenance", "sample",
                                        "recency", "metadata"}
               and set(rich.weights) == set(rich.components)
-              and rich.thresholds["min_distinct_anchors"] == 3
+              and rich.thresholds["min_distinct_anchors"] == 1
               and rich.thresholds["confidence_min"] == 40,
               f"{sorted(rich.thresholds)}")
 
@@ -347,7 +352,7 @@ def db_checks(dsn: str) -> None:
               zero.composite_confidence == dec("0.00"), str(zero.composite_confidence))
         check("and fails on the anchor conjunct, naming zero anchors",
               zero.gate_passed is False
-              and zero.gate_reason == "distinct_anchors below minimum (0 < 3)",
+              and zero.gate_reason == "distinct_anchors below minimum (0 < 1)",
               zero.gate_reason)
 
         print("\n[config keys are read, not hardcoded]")

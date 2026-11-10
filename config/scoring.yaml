@@ -348,7 +348,13 @@ confidence_gate:
   # answers "how many anchors is plenty", this answers "how few is too few to
   # rank at all". Out of a thin anchor set, promising wallets land here and stop
   # at S12c's `promising_thin` band instead of disappearing.
-  min_distinct_anchors: 3      # distinct COMPUTED anchors, same denominator as D1
+  # Path 3 (2026-11-10): 3 -> 1, together with aggregation.MIN_ANCHORS=1. Either
+  # change alone is inert (at MIN_ANCHORS=2 a single-anchor wallet has no computed
+  # aggregate, so this floor never sees it). At 1 the investigate band is reachable
+  # from the existing 5 anchors x 20 buyers; shrinkage (1/(1+5)) keeps a one-anchor
+  # wallet out of the track band (raw 82 -> shrunk 55.3 -> adjusted ~46.5). Raise
+  # back to 3 once enough anchors exist for a real track-band ranking (STATE § 3).
+  min_distinct_anchors: 1      # distinct COMPUTED anchors, same denominator as D1
 
 # ---------------------------------------------------------------------------
 # Ranking and clustering

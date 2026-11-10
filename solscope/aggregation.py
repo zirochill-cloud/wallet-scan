@@ -60,8 +60,17 @@ AGGREGATE_STATUSES: frozenset[str] = frozenset(
     {"computed", "not_rankable", "not_computable"}
 )
 
-#: One anchor is an anecdote; two is the smallest number that can agree.
-MIN_ANCHORS: int = 2
+#: Path 3 (2026-11-10): **1**, not 2.
+#:
+#: The old floor existed so an anecdote could not masquerade as a measurement,
+#: but refusing to aggregate a single anchor also meant the wallet could not be
+#: *reported as an anecdote* — it arrived at the confidence gate as
+#: ``not_rankable`` with no value, so the gate could never weigh it. At 1 the
+#: value is computed and two things price the thinness instead: the ``sample``
+#: factor (``sample_full_credit_at`` 5, so one anchor earns 1/5 of that weight)
+#: and shrinkage (``1/(1+5)``). What the wallets are worth is then a number the
+#: bands can rank, not a hole. Restore 2 to take back the two-anchor floor.
+MIN_ANCHORS: int = 1
 
 #: Cap on the per-anchor multiple. Above this the sample is a lottery ticket.
 WINSORIZE_AT: Decimal = Decimal("100")

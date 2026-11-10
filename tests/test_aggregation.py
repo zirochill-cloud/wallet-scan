@@ -18,7 +18,8 @@ What the fixtures pin down, and why each one is here:
 * ``[1000,4,4] == [100,4,4]``: winsorisation actually caps.
 * ``[-1,4,4] -> 0``: a total loss zeroes the product; the recovered spec records the
   result as 0, and that is what the code returns.
-* ``[4] -> not_rankable``: one anchor is an anecdote, not a ranking.
+* ``[4] -> computed`` at the Path 3 floor (MIN_ANCHORS=1); ``min_anchors=2``
+  restores the old "one anchor is an anecdote, not a ranking" refusal.
 * ``[4,4,NC,NC] -> 4.0 with coverage 0.5``: excluded anchors lower coverage without
   changing the number, so "0.5 of this wallet was measurable" is visible.
 
@@ -37,6 +38,7 @@ from decimal import Decimal
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from solscope.aggregation import (  # noqa: E402
+    MIN_ANCHORS,
     AggregateError,
     AggregateResult,
     AnchorMetricRow,
@@ -199,12 +201,19 @@ def logic_checks() -> None:
         aggregate_max_subsequent_return(rows([4, 4, 4]))
     check("no warning when every r is non-negative", not warned, f"{len(warned)} records")
 
+    # Path 3 (2026-11-10): MIN_ANCHORS is 1, so a single anchor COMPUTES instead of
+    # vanishing as not_rankable. Thinness is priced downstream (sample factor +
+    # shrinkage), not by refusing the arithmetic. min_anchors=2 still refuses.
     r = aggregate_max_subsequent_return(rows([4]))
-    check("[4] -> not_rankable", r.status == "not_rankable" and r.value is None,
+    check("[4] -> computed at MIN_ANCHORS=1 (single-anchor wallets compute now)",
+          r.status == "computed" and close(r.value, "4.0"),
           f"status={r.status} value={r.value}")
-    check("[4] not_rankable keeps its counts: 1 computed, coverage 1.0",
+    check("[4] keeps its counts: 1 computed, coverage 1.0",
           (r.anchor_count_computed, r.anchor_count_excluded, r.coverage) == (1, 0, 1.0),
           f"{r.anchor_count_computed}/{r.anchor_count_excluded}/{r.coverage}")
+    r = aggregate_max_subsequent_return(rows([4]), min_anchors=2)
+    check("min_anchors=2 still refuses a single anchor (floor is configurable)",
+          r.status == "not_rankable" and r.value is None, f"status={r.status}")
 
     r = aggregate_max_subsequent_return(rows([4, 4, None, None]))
     check("[4, 4, NC, NC] -> ~4.0", r.status == "computed" and close(r.value, "4.0"),
@@ -220,9 +229,8 @@ def logic_checks() -> None:
     r = aggregate_max_subsequent_return(rows([4, 4]), min_anchors=3)
     check("min_anchors=3 with 2 computed -> not_rankable", r.status == "not_rankable",
           f"status={r.status}")
-    r = aggregate_max_subsequent_return(rows([4]), min_anchors=1)
-    check("min_anchors=1 allows a single anchor", r.status == "computed" and close(r.value, "4.0"),
-          f"status={r.status} value={r.value}")
+    check("the default floor is 1 (Path 3), and it is what makes [4] compute",
+          MIN_ANCHORS == 1, f"MIN_ANCHORS={MIN_ANCHORS}")
 
     print("-- buyer_rank_at_entry ------------------------------------------")
     r = aggregate_buyer_rank_at_entry(rows([0.001, 0.001, 0.5], BR))
@@ -232,8 +240,12 @@ def logic_checks() -> None:
     r = aggregate_buyer_rank_at_entry(rows([0.5, 0.5, 0.001], BR))
     check("[0.5, 0.5, 0.001] -> 0.5", close(r.value, "0.5"), f"value={r.value}")
     r = aggregate_buyer_rank_at_entry(rows([0.1], BR))
-    check("[0.1] -> not_rankable", r.status == "not_rankable" and r.value is None,
+    check("[0.1] -> computed at MIN_ANCHORS=1 (Path 3)",
+          r.status == "computed" and close(r.value, "0.1"),
           f"status={r.status} value={r.value}")
+    r = aggregate_buyer_rank_at_entry(rows([0.1], BR), min_anchors=2)
+    check("[0.1] with min_anchors=2 -> still not_rankable",
+          r.status == "not_rankable" and r.value is None, f"status={r.status}")
     r = aggregate_buyer_rank_at_entry(rows([0.2, 0.4], BR))
     check("even count uses the midpoint", close(r.value, "0.3"), f"value={r.value}")
 
@@ -243,7 +255,9 @@ def logic_checks() -> None:
     r = aggregate_pct_entries_before_volume_spike(rows([1.0, 0.0], PV))
     check("[1.0, 0.0] -> 0.5", close(r.value, "0.5"), f"value={r.value}")
     r = aggregate_pct_entries_before_volume_spike(rows([1.0], PV))
-    check("[1.0] -> not_rankable", r.status == "not_rankable", f"status={r.status}")
+    check("[1.0] -> computed at MIN_ANCHORS=1 (Path 3)",
+          r.status == "computed" and close(r.value, "1.0"),
+          f"status={r.status} value={r.value}")
 
     print("-- shared preconditions and input validation --------------------")
     r = aggregate_max_subsequent_return([])
@@ -376,7 +390,9 @@ def db_checks() -> bool:
         check("a rule_version bump adds a row", count(conn, "wallet_aggregates") == 2,
               f"rows={count(conn, 'wallet_aggregates')}")
 
-        unrankable = aggregate_max_subsequent_return(rows([4], window_days=7))
+        # Path 3 lowered the default floor to 1, so the not_rankable storage path
+        # is exercised explicitly at min_anchors=2 instead of relying on the default.
+        unrankable = aggregate_max_subsequent_return(rows([4], window_days=7), min_anchors=2)
         write_aggregate(conn, wallet, unrankable, "v1-unrankable")
         stored = conn.execute(
             "SELECT value, status FROM wallet_aggregates WHERE wallet=%s AND rule_version=%s",
