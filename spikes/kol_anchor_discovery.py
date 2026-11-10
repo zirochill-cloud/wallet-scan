@@ -160,7 +160,9 @@ def main(argv: list[str] | None = None) -> int:
 
     client = MadeOnSolClient(key, usage_path=ROOT / "data" / "madeonsol_usage.json")
     quota = client.quota()
-    projected = 1 + args.limit_tokens * 2
+    # Upper bound, not an average: up to `pages` candidate scans, plus one
+    # entry-order and one trades page per confirmed candidate.
+    projected = args.pages + args.limit_tokens * 2
     print("MadeOnSol KOL-anchor discovery — FREE tier, read-only, seeds nothing")
     print(f"  budget: {quota.remaining}/{quota.daily_cap} calls left today "
           f"(projected cost for this run: ~{projected})")
