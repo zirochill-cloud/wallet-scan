@@ -207,6 +207,22 @@ and they are the only anchor candidates the project has. Per-anchor on-chain ver
 
 ## § PROCESS_FAILURES
 
+**Estimated a Helius fetch at ~40 credits per wallet without checking the call
+shape (2026-11-10).** The estimate assumed a cheap "wallet x mint" query. No such
+primitive exists: `adapters/helius.py` exposes `signatures_for_address`,
+`token_accounts_by_owner` and `transaction(signature)` only. Reconstructing one
+wallet's trades in one mint therefore requires paging its signatures across the
+whole window and fetching each transaction: ~50-300 tx/day for a memecoin-active
+wallet, so ~1,500-9,000 transactions per wallet at ~1 credit each —
+**150k-900k credits for 100 wallets**, two orders of magnitude above the estimate
+(~4,000). It also blocked a deliverable that had been promised as cheap.
+
+**Rule:** before quoting a per-unit cost, name the exact call that implements the
+unit and state its paging depth. A cost estimate is a claim about API shape; it
+is falsified by reading the adapter, not by multiplying a guessed number. The
+inverted design (page the MINT's signatures once, filter buyer wallets in memory:
+~2k-5k credits per anchor) was only visible after that reading.
+
 **2026-10-26: Third data-loss event.** Git history did not survive the cloud VM →
 desktop move. Prior commits are gone; `1944c74` is the new baseline. The code
 survived as files on disk; the history is lost. This is the third incident of the
