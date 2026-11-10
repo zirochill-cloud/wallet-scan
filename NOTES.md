@@ -463,6 +463,26 @@ Today the gate's first conjunct fails for every wallet (`existing_confidence = 0
 
 ## § ANTI_PATTERNS
 
+**Three silent-failure traps found by reading, not by running (2026-11-10).**
+Each would have produced a pipeline that ran, persisted and reported success
+while changing nothing:
+
+1. **Provenance lives in `swaps`, not `positions`.** `confidence.PROVENANCE_SQL`
+   counts `swaps.price_provenance = 'swap_derived'` joined to `positions.entry_swap_signature`.
+   Reconstructing positions without writing swap rows leaves provenance at 0 and
+   confidence at 34 — the "simpler" in-memory path is a no-op.
+2. **`entry_swap_signature` comes from `SwapLeg.signature`** (`positions.py:292`),
+   not from `SwapLeg.swap_id`, which is the integer `swaps.id`. Populating one and
+   not the other yields positions whose provenance join matches nothing.
+3. **`lot_matches` needs the integer id.** `positions.py:548` skips any match whose
+   `buy_swap_id`/`sell_swap_id` is NULL, so `INSERT ... ON CONFLICT DO NOTHING`
+   without `RETURNING id` (plus a `SELECT` fallback on conflict, with
+   `inner_index IS NOT DISTINCT FROM %s`) silently discards all FIFO matching.
+
+**Rule:** the same row feeds two consumers that key it differently — a transaction
+signature for provenance, an integer id for lot matching. When a table has both,
+populate both, and prove it by asserting the join returns a row.
+
 **Harness instability: malformed tool calls (2026-10-26).** Five structurally
 invalid calls were observed in one session. In every case a required field was
 dropped or renamed at serialization time — the call arrived without it:
