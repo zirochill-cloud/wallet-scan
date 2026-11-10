@@ -463,6 +463,16 @@ Today the gate's first conjunct fails for every wallet (`existing_confidence = 0
 
 ## § ANTI_PATTERNS
 
+**The terminating empty signature page is a billable call (2026-11-10).** A
+backward walk over `getSignaturesForAddress` ends when a page comes back empty,
+and that page costs 1 RPC call. For 91ryaCo (339 signatures) the real cost is
+4 page calls + 339 transaction fetches ~= 340 credits, not 339, and
+`FetchReport.credits_used` must include it.
+
+Do not "optimise" it away with `until`: `until` stops *at* a signature and
+re-reads the newest page forever, while `before` advances the cursor and the
+natural terminus is the empty page.
+
 **Three silent-failure traps found by reading, not by running (2026-11-10).**
 Each would have produced a pipeline that ran, persisted and reported success
 while changing nothing:
