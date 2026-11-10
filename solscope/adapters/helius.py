@@ -247,9 +247,20 @@ class HeliusRpc:
             return resp.read()
 
     def signatures_for_address(self, address: str, *, limit: int = 1000,
+                               before: str | None = None,
                                until: str | None = None,
                                request_key: str | None = None) -> tuple[dict, bytes]:
+        """Signatures for ``address``, newest first.
+
+        ``before`` is the backward cursor: pass the oldest signature already
+        seen and the next page continues older. ``until`` is different — it
+        stops *at* a signature. Without ``before`` a busy mint truncates at
+        ``limit`` (measured: a 2,549-signature anchor returns 1,000 and the
+        walk silently ends), which is why retrospective paging requires it.
+        """
         params: list = [address, {"limit": limit}]
+        if before:
+            params[1]["before"] = before
         if until:
             params[1]["until"] = until
         return self._rpc("getSignaturesForAddress", params,
