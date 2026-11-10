@@ -207,6 +207,22 @@ and they are the only anchor candidates the project has. Per-anchor on-chain ver
 
 ## § PROCESS_FAILURES
 
+**Specified a module to write `swap_events` rows; no such table exists
+(2026-11-10).** The table is `swaps` (`schema/001_init.sql:291`). `swap_events`
+was carried through two turns of task briefs and a `FetchReport` field name
+without ever being checked against the schema, so the one thing the build had to
+write was the one thing never verified.
+
+The same reading also refuted the "prefer in-memory legs" simplification:
+confidence's `price_provenance` factor (`PROVENANCE_SQL`, `confidence.py:81`)
+counts `swaps.price_provenance = 'swap_derived'` joined to `positions` on
+`entry_swap_signature`. Positions without `swaps` rows would score provenance
+zero — the build would have run, persisted, and changed nothing.
+
+**Rule:** a write target is a contract. Name the table and its columns from the
+schema before the module that writes them; and before choosing "skip persistence"
+as a simplification, read the query that consumes it.
+
 **Estimated a Helius fetch at ~40 credits per wallet without checking the call
 shape (2026-11-10).** The estimate assumed a cheap "wallet x mint" query. No such
 primitive exists: `adapters/helius.py` exposes `signatures_for_address`,
